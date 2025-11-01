@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-UWB Server - Up to 8 Anchors
+UWB Server - Up to 8 Anchors with 3D Position Calculation
 Reads positions 5, 7, 9, 11, 13, 15, 17, 19 for Anchor IDs 0-7
-Only displays anchors with valid distance data
+Calculates 3D position using multilateration and Kalman filtering
 """
 import serial
 import struct
@@ -10,14 +10,27 @@ import time
 import json
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import threading
+from position_solver import PositionSolver
 
 latest_data = {
     'timestamp': 0,
     'anchors': {},
     'packet_count': 0,
     'device_port': '',
-    'format': 'CmdM:4[ - Auto-detect anchors'
+    'format': 'CmdM:4[ - Auto-detect anchors',
+    'position': {
+        'x': None,
+        'y': None,
+        'z': None,
+        'success': False,
+        'num_anchors': 0,
+        'residual': None,
+        'velocity': {'x': 0, 'y': 0, 'z': 0}
+    }
 }
+
+# Global position solver
+position_solver = None
 
 # Track last seen time for each anchor
 anchor_last_seen = {}
@@ -148,12 +161,40 @@ def read_uwb_data(port='/dev/ttyACM0'):
                             # Get full status for all 8 anchors
                             all_anchors_status = get_all_anchors_status(anchors)
 
+                            # Calculate 3D position if solver is available
+                            position_data = {
+                                'x': None,
+                                'y': None,
+                                'z': None,
+                                'success': False,
+                                'num_anchors': 0,
+                                'residual': None,
+                                'velocity': {'x': 0, 'y': 0, 'z': 0}
+                            }
+
+                            if position_solver:
+                                result = position_solver.solve(anchors)
+                                position_data['success'] = result['success']
+                                position_data['num_anchors'] = result['num_anchors']
+                                position_data['residual'] = result['residual']
+
+                                if result['success'] and result['position']:
+                                    position_data['x'] = result['position'][0]
+                                    position_data['y'] = result['position'][1]
+                                    position_data['z'] = result['position'][2]
+
+                                    if result['velocity']:
+                                        position_data['velocity']['x'] = result['velocity'][0]
+                                        position_data['velocity']['y'] = result['velocity'][1]
+                                        position_data['velocity']['z'] = result['velocity'][2]
+
                             latest_data = {
                                 'timestamp': time.time(),
                                 'anchors': all_anchors_status,
                                 'packet_count': packet_count,
                                 'device_port': port,
-                                'format': f'CmdM:4[ - {len(anchors)} Anchors'
+                                'format': f'CmdM:4[ - {len(anchors)} Anchors',
+                                'position': position_data
                             }
 
                 if len(buffer) > 5000:
@@ -174,6 +215,17 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps(latest_data).encode())
 
+        elif self.path == '/anchor_config.json':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            try:
+                with open('anchor_config.json', 'rb') as f:
+                    self.wfile.write(f.read())
+            except FileNotFoundError:
+                self.wfile.write(b'{}')
+
         elif self.path == '/' or self.path == '/index.html':
             self.send_response(200)
             self.send_header('Content-type', 'text/html')
@@ -182,6 +234,45 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
                 self.wfile.write(f.read())
         else:
             super().do_GET()
+
+    def do_POST(self):
+        if self.path == '/update_params':
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+
+            try:
+                params = json.loads(post_data.decode('utf-8'))
+
+                # Update position solver parameters
+                if position_solver:
+                    if 'process_noise' in params:
+                        position_solver.kalman.update_process_noise(params['process_noise'])
+                        print(f"✓ Updated process_noise: {params['process_noise']}")
+
+                    if 'measurement_noise' in params:
+                        position_solver.kalman.update_measurement_noise(params['measurement_noise'])
+                        print(f"✓ Updated measurement_noise: {params['measurement_noise']}")
+
+                    if 'outlier_threshold' in params:
+                        position_solver.outlier_threshold = params['outlier_threshold']
+                        print(f"✓ Updated outlier_threshold: {params['outlier_threshold']}")
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'ok'}).encode())
+
+            except Exception as e:
+                print(f"Error updating parameters: {e}")
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
 
     def log_message(self, format, *args):
         pass
@@ -229,6 +320,18 @@ if __name__ == "__main__":
             print("\nPlease connect a device or specify the port manually:")
             print("  python3 uwb_server.py /dev/ttyACM0 8080")
             sys.exit(1)
+
+    # Initialize position solver
+    print("\n" + "="*50)
+    print("Initializing 3D Position Solver")
+    print("="*50)
+    try:
+        position_solver = PositionSolver('anchor_config.json')
+        print("✓ Position solver ready")
+    except Exception as e:
+        print(f"Warning: Could not initialize position solver: {e}")
+        print("Continuing without 3D positioning...")
+        position_solver = None
 
     uwb_thread = threading.Thread(target=read_uwb_data, args=(uwb_port,), daemon=True)
     uwb_thread.start()

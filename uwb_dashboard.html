@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>UWB Positioning - Up to 8 Anchors</title>
+    <title>UWB 3D Positioning System</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <style>
         * {
             margin: 0;
@@ -68,52 +70,73 @@
             color: #667eea;
         }
 
-        .anchor-container {
+        .content-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            grid-template-columns: 1fr 1fr;
             gap: 20px;
             margin-bottom: 20px;
         }
 
-        .anchor {
+        .anchor-section {
             background: rgba(255, 255, 255, 0.95);
-            padding: 25px;
+            padding: 20px;
             border-radius: 10px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            transition: opacity 0.3s, background 0.3s;
+        }
+
+        .section-title {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .anchor-container {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .anchor {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 12px;
+            border-radius: 8px;
+            border: 2px solid #e0e0e0;
+            transition: opacity 0.3s, border-color 0.3s;
         }
 
         .anchor.disconnected {
-            opacity: 0.5;
-            background: rgba(200, 200, 200, 0.5);
+            opacity: 0.4;
+            border-color: #ccc;
         }
 
         .anchor-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 15px;
+            margin-bottom: 8px;
         }
 
         .anchor-name {
-            font-size: 1.3em;
+            font-size: 0.9em;
             font-weight: bold;
             color: #333;
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 6px;
         }
 
         .status-indicator {
-            width: 12px;
-            height: 12px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
             display: inline-block;
         }
 
         .status-indicator.connected {
             background: #4CAF50;
-            box-shadow: 0 0 8px #4CAF50;
+            box-shadow: 0 0 6px #4CAF50;
         }
 
         .status-indicator.disconnected {
@@ -121,16 +144,16 @@
         }
 
         .anchor-distance {
-            font-size: 1.8em;
+            font-size: 1.1em;
             font-weight: bold;
             color: #667eea;
         }
 
         .bar-container {
             width: 100%;
-            height: 40px;
+            height: 20px;
             background: #e0e0e0;
-            border-radius: 20px;
+            border-radius: 10px;
             overflow: hidden;
             position: relative;
         }
@@ -138,23 +161,111 @@
         .bar {
             height: 100%;
             background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-            border-radius: 20px;
+            border-radius: 10px;
             transition: width 0.2s ease-out;
-            display: flex;
-            align-items: center;
-            justify-content: flex-end;
-            padding-right: 15px;
-            color: white;
-            font-weight: bold;
-            min-width: 50px;
+            min-width: 0px;
         }
 
-        .scale {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 5px;
+        #viewer3d {
+            width: 100%;
+            height: 500px;
+            background: #1a1a2e;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .position-info {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-top: 10px;
+        }
+
+        .position-coords {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            text-align: center;
+        }
+
+        .coord-item {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .coord-label {
             font-size: 0.8em;
             color: #666;
+            margin-bottom: 3px;
+        }
+
+        .coord-value {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .controls-panel {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-top: 10px;
+        }
+
+        .controls-title {
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 12px;
+            text-align: center;
+        }
+
+        .control-item {
+            margin-bottom: 15px;
+        }
+
+        .control-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .control-value {
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #e0e0e0;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #667eea;
+            cursor: pointer;
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #667eea;
+            cursor: pointer;
+            border: none;
         }
 
         .connection-status {
@@ -177,16 +288,26 @@
             color: white;
         }
 
+        @media (max-width: 1200px) {
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .anchor-container {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+
         @media (max-width: 768px) {
             h1 {
                 font-size: 1.8em;
             }
 
-            .anchor-distance {
-                font-size: 1.4em;
+            .anchor-container {
+                grid-template-columns: repeat(2, 1fr);
             }
 
-            .anchor-container {
+            .position-coords {
                 grid-template-columns: 1fr;
             }
         }
@@ -196,8 +317,8 @@
     <div id="connectionStatus" class="connection-status disconnected">Connecting...</div>
 
     <div class="container">
-        <h1>🎯 UWB Positioning Dashboard</h1>
-        <div class="subtitle" id="deviceType">Up to 8 Anchors - Waiting for data...</div>
+        <h1>🎯 UWB 3D Positioning System</h1>
+        <div class="subtitle" id="deviceType">Real-time 3D tracking - Waiting for data...</div>
 
         <div class="status">
             <div class="status-item">
@@ -218,8 +339,57 @@
             </div>
         </div>
 
-        <div class="anchor-container" id="anchorContainer">
-            <!-- Anchors will be dynamically created here -->
+        <div class="content-grid">
+            <div class="anchor-section">
+                <div class="section-title">Anchor Distances</div>
+                <div class="anchor-container" id="anchorContainer">
+                    <!-- Anchors will be dynamically created here -->
+                </div>
+            </div>
+
+            <div>
+                <div id="viewer3d"></div>
+                <div class="position-info">
+                    <div class="position-coords">
+                        <div class="coord-item">
+                            <div class="coord-label">X Position (m)</div>
+                            <div class="coord-value" id="posX">--</div>
+                        </div>
+                        <div class="coord-item">
+                            <div class="coord-label">Y Position (m)</div>
+                            <div class="coord-value" id="posY">--</div>
+                        </div>
+                        <div class="coord-item">
+                            <div class="coord-label">Z Position (m)</div>
+                            <div class="coord-value" id="posZ">--</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="controls-panel">
+                    <div class="controls-title">Filter Settings</div>
+                    <div class="control-item">
+                        <div class="control-label">
+                            <span>Process Noise (Motion Model)</span>
+                            <span class="control-value" id="processNoiseValue">0.10</span>
+                        </div>
+                        <input type="range" id="processNoise" min="0.01" max="0.50" step="0.01" value="0.10">
+                    </div>
+                    <div class="control-item">
+                        <div class="control-label">
+                            <span>Measurement Noise (Trust)</span>
+                            <span class="control-value" id="measurementNoiseValue">0.20</span>
+                        </div>
+                        <input type="range" id="measurementNoise" min="0.05" max="1.0" step="0.05" value="0.20">
+                    </div>
+                    <div class="control-item">
+                        <div class="control-label">
+                            <span>Outlier Threshold (m)</span>
+                            <span class="control-value" id="outlierThresholdValue">0.30</span>
+                        </div>
+                        <input type="range" id="outlierThreshold" min="0.1" max="1.0" step="0.05" value="0.30">
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -237,19 +407,12 @@
                 <div class="anchor-header">
                     <div class="anchor-name">
                         <span class="status-indicator disconnected" id="status${anchorId}"></span>
-                        <span>Anchor ID ${anchorId}</span>
+                        <span>A${anchorId}</span>
                     </div>
                     <div class="anchor-distance" id="distance${anchorId}">--</div>
                 </div>
                 <div class="bar-container">
                     <div class="bar" id="bar${anchorId}" style="width: 0%"></div>
-                </div>
-                <div class="scale">
-                    <span>0m</span>
-                    <span>2.5m</span>
-                    <span>5m</span>
-                    <span>7.5m</span>
-                    <span>10m</span>
                 </div>
             `;
             return div;
@@ -314,6 +477,11 @@
                 updateAnchors(data.anchors);
             }
 
+            // Update position
+            if (data.position) {
+                updatePosition(data.position);
+            }
+
             // Update packet count
             document.getElementById('packetCount').textContent = data.packet_count || 0;
 
@@ -336,6 +504,25 @@
             statusElement.className = 'connection-status connected';
         }
 
+        function updatePosition(position) {
+            if (position.success && position.x !== null) {
+                document.getElementById('posX').textContent = position.x.toFixed(2);
+                document.getElementById('posY').textContent = position.y.toFixed(2);
+                document.getElementById('posZ').textContent = position.z.toFixed(2);
+
+                // Update 3D visualization
+                // Map real coords to Three.js: X=X, Y=Z(up), Z=depth-Y(north inverted)
+                if (tagMesh && anchorConfig) {
+                    const roomDepth = anchorConfig.room.depth || 3;
+                    tagMesh.position.set(position.x, position.z, roomDepth - position.y);
+                }
+            } else {
+                document.getElementById('posX').textContent = '--';
+                document.getElementById('posY').textContent = '--';
+                document.getElementById('posZ').textContent = '--';
+            }
+        }
+
         function fetchData() {
             fetch('/data')
                 .then(response => response.json())
@@ -350,8 +537,275 @@
                 });
         }
 
+        // ===== Three.js 3D Visualization =====
+        let scene, camera, renderer, controls;
+        let anchorMeshes = {};
+        let tagMesh;
+        let anchorConfig = null;
+
+        function init3DScene() {
+            const container = document.getElementById('viewer3d');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a2e);
+            scene.fog = new THREE.Fog(0x1a1a2e, 10, 50);
+
+            // Camera (positioned to look down at the room from above/side)
+            camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 100);
+            camera.position.set(2, 5, 5); // Above and south of center
+            camera.lookAt(2, 1.0, 1.5);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(width, height);
+            container.appendChild(renderer.domElement);
+
+            // Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.target.set(2, 1.0, 1.5); // Center of room
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(5, 10, 5);
+            scene.add(dirLight);
+
+            // Grid and axes
+            const gridHelper = new THREE.GridHelper(10, 20, 0x444444, 0x222222);
+            gridHelper.position.y = 0;
+            scene.add(gridHelper);
+
+            const axesHelper = new THREE.AxesHelper(1);
+            scene.add(axesHelper);
+
+            // Load anchor config and create room
+            loadAnchorConfig();
+
+            // Animation loop
+            animate();
+        }
+
+        function loadAnchorConfig() {
+            fetch('/anchor_config.json')
+                .then(response => response.json())
+                .then(config => {
+                    anchorConfig = config;
+                    createRoom(config.room);
+                    createAnchors(config.anchors);
+                    createTag();
+                })
+                .catch(error => {
+                    console.error('Could not load anchor config:', error);
+                    // Use default config
+                    createDefaultRoom();
+                    createTag();
+                });
+        }
+
+        function createRoom(room) {
+            const width = room.width || 4;
+            const depth = room.depth || 3;
+            const height = room.height || 2.5;
+
+            // Floor
+            const floorGeometry = new THREE.PlaneGeometry(width, depth);
+            const floorMaterial = new THREE.MeshStandardMaterial({
+                color: 0x2a2a3e,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.8
+            });
+            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.set(width/2, 0, depth/2);
+            scene.add(floor);
+
+            // No ceiling - removed for better visibility
+
+            // Walls (wireframe)
+            const wallMaterial = new THREE.LineBasicMaterial({ color: 0x667eea, linewidth: 2 });
+
+            // Create room outline
+            const points = [
+                new THREE.Vector3(0, 0, 0),
+                new THREE.Vector3(width, 0, 0),
+                new THREE.Vector3(width, 0, depth),
+                new THREE.Vector3(0, 0, depth),
+                new THREE.Vector3(0, 0, 0),
+                new THREE.Vector3(0, height, 0),
+                new THREE.Vector3(width, height, 0),
+                new THREE.Vector3(width, 0, 0),
+                new THREE.Vector3(width, height, 0),
+                new THREE.Vector3(width, height, depth),
+                new THREE.Vector3(width, 0, depth),
+                new THREE.Vector3(width, height, depth),
+                new THREE.Vector3(0, height, depth),
+                new THREE.Vector3(0, 0, depth),
+                new THREE.Vector3(0, height, depth),
+                new THREE.Vector3(0, height, 0),
+            ];
+
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const line = new THREE.Line(geometry, wallMaterial);
+            scene.add(line);
+        }
+
+        function createDefaultRoom() {
+            createRoom({ width: 4, depth: 3, height: 2.5 });
+        }
+
+        function createAnchors(anchorsConfig) {
+            const roomDepth = anchorConfig.room.depth || 3;
+
+            for (const [anchorId, anchorData] of Object.entries(anchorsConfig)) {
+                if (anchorData.enabled) {
+                    const pos = anchorData.position;
+
+                    // Anchor sphere
+                    // Map real coords to Three.js: X=X, Y=Z(up), Z=depth-Y(north inverted)
+                    const geometry = new THREE.SphereGeometry(0.08, 16, 16);
+                    const material = new THREE.MeshStandardMaterial({
+                        color: 0x4CAF50,
+                        emissive: 0x4CAF50,
+                        emissiveIntensity: 0.5
+                    });
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.position.set(pos[0], pos[2], roomDepth - pos[1]);
+                    scene.add(mesh);
+
+                    // Label
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.width = 128;
+                    canvas.height = 64;
+                    context.fillStyle = '#ffffff';
+                    context.font = 'Bold 32px Arial';
+                    context.textAlign = 'center';
+                    context.fillText(`A${anchorId}`, 64, 40);
+
+                    const texture = new THREE.CanvasTexture(canvas);
+                    const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+                    const sprite = new THREE.Sprite(spriteMaterial);
+                    sprite.position.set(pos[0], pos[2] + 0.2, roomDepth - pos[1]);
+                    sprite.scale.set(0.6, 0.3, 1); // Doubled size for better visibility
+                    scene.add(sprite);
+
+                    anchorMeshes[anchorId] = mesh;
+                }
+            }
+        }
+
+        function createTag() {
+            // Tag sphere (larger and different color)
+            const geometry = new THREE.SphereGeometry(0.12, 32, 32);
+            const material = new THREE.MeshStandardMaterial({
+                color: 0xff6b6b,
+                emissive: 0xff6b6b,
+                emissiveIntensity: 0.6,
+                metalness: 0.3,
+                roughness: 0.4
+            });
+            tagMesh = new THREE.Mesh(geometry, material);
+            // Start at room center: X=2, Y=1.5, Z=1.0 -> Three.js (2, 1.0, 1.5)
+            const roomDepth = anchorConfig ? anchorConfig.room.depth : 3;
+            tagMesh.position.set(2, 1.0, roomDepth - 1.5);
+            scene.add(tagMesh);
+
+            // Trail effect (optional)
+            const trailGeometry = new THREE.SphereGeometry(0.03, 8, 8);
+            const trailMaterial = new THREE.MeshBasicMaterial({
+                color: 0xff6b6b,
+                transparent: true,
+                opacity: 0.3
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            const container = document.getElementById('viewer3d');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        });
+
+        // ===== Parameter Controls =====
+        function setupParameterControls() {
+            const processNoiseSlider = document.getElementById('processNoise');
+            const measurementNoiseSlider = document.getElementById('measurementNoise');
+            const outlierThresholdSlider = document.getElementById('outlierThreshold');
+
+            const processNoiseValue = document.getElementById('processNoiseValue');
+            const measurementNoiseValue = document.getElementById('measurementNoiseValue');
+            const outlierThresholdValue = document.getElementById('outlierThresholdValue');
+
+            // Update displayed values
+            processNoiseSlider.addEventListener('input', (e) => {
+                processNoiseValue.textContent = parseFloat(e.target.value).toFixed(2);
+            });
+
+            measurementNoiseSlider.addEventListener('input', (e) => {
+                measurementNoiseValue.textContent = parseFloat(e.target.value).toFixed(2);
+            });
+
+            outlierThresholdSlider.addEventListener('input', (e) => {
+                outlierThresholdValue.textContent = parseFloat(e.target.value).toFixed(2);
+            });
+
+            // Send updates to server on change (not while dragging)
+            processNoiseSlider.addEventListener('change', (e) => {
+                updateParameter('process_noise', parseFloat(e.target.value));
+            });
+
+            measurementNoiseSlider.addEventListener('change', (e) => {
+                updateParameter('measurement_noise', parseFloat(e.target.value));
+            });
+
+            outlierThresholdSlider.addEventListener('change', (e) => {
+                updateParameter('outlier_threshold', parseFloat(e.target.value));
+            });
+        }
+
+        function updateParameter(param, value) {
+            fetch('/update_params', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ [param]: value })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Parameter updated:', param, '=', value);
+            })
+            .catch(error => {
+                console.error('Error updating parameter:', error);
+            });
+        }
+
+        // ===== Initialize Everything =====
+        init3DScene();
+
         // Initialize all 8 anchors on page load
         initializeAnchors();
+
+        // Setup parameter controls
+        setupParameterControls();
 
         // Poll for data every 100ms
         setInterval(fetchData, 100);
