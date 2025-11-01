@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UWB Positioning - Up to 8 Anchors</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: white;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .subtitle {
+            text-align: center;
+            color: rgba(255,255,255,0.9);
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+
+        .status {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .status-item {
+            text-align: center;
+        }
+
+        .status-label {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .status-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .anchor-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .anchor {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .anchor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .anchor-name {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .anchor-distance {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .bar-container {
+            width: 100%;
+            height: 40px;
+            background: #e0e0e0;
+            border-radius: 20px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .bar {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            border-radius: 20px;
+            transition: width 0.2s ease-out;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 15px;
+            color: white;
+            font-weight: bold;
+            min-width: 50px;
+        }
+
+        .scale {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 5px;
+            font-size: 0.8em;
+            color: #666;
+        }
+
+        .connection-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .connected {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .disconnected {
+            background: #f44336;
+            color: white;
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.8em;
+            }
+
+            .anchor-distance {
+                font-size: 1.4em;
+            }
+
+            .anchor-container {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="connectionStatus" class="connection-status disconnected">Connecting...</div>
+
+    <div class="container">
+        <h1>🎯 UWB Positioning Dashboard</h1>
+        <div class="subtitle" id="deviceType">Detecting anchors...</div>
+
+        <div class="status">
+            <div class="status-item">
+                <div class="status-label">Active Anchors</div>
+                <div class="status-value" id="numAnchors">0</div>
+            </div>
+            <div class="status-item">
+                <div class="status-label">Update Rate</div>
+                <div class="status-value" id="updateRate">0 Hz</div>
+            </div>
+            <div class="status-item">
+                <div class="status-label">Packets</div>
+                <div class="status-value" id="packetCount">0</div>
+            </div>
+            <div class="status-item">
+                <div class="status-label">Last Update</div>
+                <div class="status-value" id="lastUpdate">--</div>
+            </div>
+        </div>
+
+        <div class="anchor-container" id="anchorContainer">
+            <!-- Anchors will be dynamically created here -->
+        </div>
+    </div>
+
+    <script>
+        const MAX_DISTANCE = 10; // meters
+        let lastPacketCount = 0;
+        let lastUpdateTime = Date.now();
+        let currentAnchors = new Set();
+
+        function createAnchorElement(anchorId) {
+            const div = document.createElement('div');
+            div.className = 'anchor';
+            div.id = `anchor${anchorId}`;
+            div.innerHTML = `
+                <div class="anchor-header">
+                    <div class="anchor-name">Anchor ID ${anchorId}</div>
+                    <div class="anchor-distance" id="distance${anchorId}">0.00 m</div>
+                </div>
+                <div class="bar-container">
+                    <div class="bar" id="bar${anchorId}" style="width: 0%"></div>
+                </div>
+                <div class="scale">
+                    <span>0m</span>
+                    <span>2.5m</span>
+                    <span>5m</span>
+                    <span>7.5m</span>
+                    <span>10m</span>
+                </div>
+            `;
+            return div;
+        }
+
+        function updateAnchors(anchors) {
+            const container = document.getElementById('anchorContainer');
+            const anchorIds = Object.keys(anchors).sort((a, b) => parseInt(a) - parseInt(b));
+
+            // Add new anchors
+            anchorIds.forEach(anchorId => {
+                if (!currentAnchors.has(anchorId)) {
+                    currentAnchors.add(anchorId);
+                    container.appendChild(createAnchorElement(anchorId));
+                }
+            });
+
+            // Update all anchor values
+            anchorIds.forEach(anchorId => {
+                const distance = anchors[anchorId];
+                const distanceElement = document.getElementById(`distance${anchorId}`);
+                const barElement = document.getElementById(`bar${anchorId}`);
+
+                if (distanceElement && barElement && distance > 0) {
+                    distanceElement.textContent = distance.toFixed(3) + ' m';
+                    const percentage = Math.min((distance / MAX_DISTANCE) * 100, 100);
+                    barElement.style.width = percentage + '%';
+                }
+            });
+        }
+
+        function updateDashboard(data) {
+            const now = Date.now();
+            const elapsed = (now - lastUpdateTime) / 1000;
+
+            // Update device type
+            if (data.format) {
+                document.getElementById('deviceType').textContent = data.format;
+            }
+
+            // Update anchors
+            if (data.anchors) {
+                updateAnchors(data.anchors);
+                document.getElementById('numAnchors').textContent = Object.keys(data.anchors).length;
+            }
+
+            // Update packet count
+            document.getElementById('packetCount').textContent = data.packet_count || 0;
+
+            // Calculate update rate
+            if (elapsed > 0.5) {
+                const packetDiff = (data.packet_count || 0) - lastPacketCount;
+                const updateRate = (packetDiff / elapsed).toFixed(1);
+                document.getElementById('updateRate').textContent = updateRate + ' Hz';
+                lastPacketCount = data.packet_count || 0;
+                lastUpdateTime = now;
+            }
+
+            // Update last update time
+            const date = new Date();
+            document.getElementById('lastUpdate').textContent = date.toLocaleTimeString();
+
+            // Update connection status
+            const statusElement = document.getElementById('connectionStatus');
+            statusElement.textContent = 'Connected';
+            statusElement.className = 'connection-status connected';
+        }
+
+        function fetchData() {
+            fetch('/data')
+                .then(response => response.json())
+                .then(data => {
+                    updateDashboard(data);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    const statusElement = document.getElementById('connectionStatus');
+                    statusElement.textContent = 'Disconnected';
+                    statusElement.className = 'connection-status disconnected';
+                });
+        }
+
+        // Poll for data every 100ms
+        setInterval(fetchData, 100);
+
+        // Initial fetch
+        fetchData();
+    </script>
+</body>
+</html>
