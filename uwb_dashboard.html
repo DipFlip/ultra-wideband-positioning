@@ -80,6 +80,12 @@
             padding: 25px;
             border-radius: 10px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: opacity 0.3s, background 0.3s;
+        }
+
+        .anchor.disconnected {
+            opacity: 0.5;
+            background: rgba(200, 200, 200, 0.5);
         }
 
         .anchor-header {
@@ -93,6 +99,25 @@
             font-size: 1.3em;
             font-weight: bold;
             color: #333;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .status-indicator.connected {
+            background: #4CAF50;
+            box-shadow: 0 0 8px #4CAF50;
+        }
+
+        .status-indicator.disconnected {
+            background: #ccc;
         }
 
         .anchor-distance {
@@ -172,7 +197,7 @@
 
     <div class="container">
         <h1>🎯 UWB Positioning Dashboard</h1>
-        <div class="subtitle" id="deviceType">Detecting anchors...</div>
+        <div class="subtitle" id="deviceType">Up to 8 Anchors - Waiting for data...</div>
 
         <div class="status">
             <div class="status-item">
@@ -206,12 +231,15 @@
 
         function createAnchorElement(anchorId) {
             const div = document.createElement('div');
-            div.className = 'anchor';
+            div.className = 'anchor disconnected';
             div.id = `anchor${anchorId}`;
             div.innerHTML = `
                 <div class="anchor-header">
-                    <div class="anchor-name">Anchor ID ${anchorId}</div>
-                    <div class="anchor-distance" id="distance${anchorId}">0.00 m</div>
+                    <div class="anchor-name">
+                        <span class="status-indicator disconnected" id="status${anchorId}"></span>
+                        <span>Anchor ID ${anchorId}</span>
+                    </div>
+                    <div class="anchor-distance" id="distance${anchorId}">--</div>
                 </div>
                 <div class="bar-container">
                     <div class="bar" id="bar${anchorId}" style="width: 0%"></div>
@@ -227,30 +255,49 @@
             return div;
         }
 
-        function updateAnchors(anchors) {
+        // Create all 8 anchors on page load
+        function initializeAnchors() {
             const container = document.getElementById('anchorContainer');
-            const anchorIds = Object.keys(anchors).sort((a, b) => parseInt(a) - parseInt(b));
+            for (let i = 0; i < 8; i++) {
+                container.appendChild(createAnchorElement(i));
+            }
+        }
 
-            // Add new anchors
-            anchorIds.forEach(anchorId => {
-                if (!currentAnchors.has(anchorId)) {
-                    currentAnchors.add(anchorId);
-                    container.appendChild(createAnchorElement(anchorId));
-                }
-            });
+        function updateAnchors(anchors) {
+            let connectedCount = 0;
 
-            // Update all anchor values
-            anchorIds.forEach(anchorId => {
-                const distance = anchors[anchorId];
+            // Update all 8 anchors
+            for (let i = 0; i < 8; i++) {
+                const anchorId = String(i);
+                const anchorData = anchors[anchorId];
+
+                const anchorElement = document.getElementById(`anchor${anchorId}`);
+                const statusElement = document.getElementById(`status${anchorId}`);
                 const distanceElement = document.getElementById(`distance${anchorId}`);
                 const barElement = document.getElementById(`bar${anchorId}`);
 
-                if (distanceElement && barElement && distance > 0) {
-                    distanceElement.textContent = distance.toFixed(3) + ' m';
-                    const percentage = Math.min((distance / MAX_DISTANCE) * 100, 100);
-                    barElement.style.width = percentage + '%';
+                if (anchorData && anchorData.connected) {
+                    // Anchor is connected
+                    connectedCount++;
+                    anchorElement.classList.remove('disconnected');
+                    statusElement.className = 'status-indicator connected';
+
+                    if (anchorData.distance !== null && anchorData.distance > 0) {
+                        distanceElement.textContent = anchorData.distance.toFixed(3) + ' m';
+                        const percentage = Math.min((anchorData.distance / MAX_DISTANCE) * 100, 100);
+                        barElement.style.width = percentage + '%';
+                    }
+                } else {
+                    // Anchor is disconnected or never seen
+                    anchorElement.classList.add('disconnected');
+                    statusElement.className = 'status-indicator disconnected';
+                    distanceElement.textContent = '--';
+                    barElement.style.width = '0%';
                 }
-            });
+            }
+
+            // Update connected count
+            document.getElementById('numAnchors').textContent = `${connectedCount}/8`;
         }
 
         function updateDashboard(data) {
@@ -265,7 +312,6 @@
             // Update anchors
             if (data.anchors) {
                 updateAnchors(data.anchors);
-                document.getElementById('numAnchors').textContent = Object.keys(data.anchors).length;
             }
 
             // Update packet count
@@ -303,6 +349,9 @@
                     statusElement.className = 'connection-status disconnected';
                 });
         }
+
+        // Initialize all 8 anchors on page load
+        initializeAnchors();
 
         // Poll for data every 100ms
         setInterval(fetchData, 100);

@@ -19,6 +19,44 @@ latest_data = {
     'format': 'CmdM:4[ - Auto-detect anchors'
 }
 
+# Track last seen time for each anchor
+anchor_last_seen = {}
+ANCHOR_TIMEOUT = 2.0  # Seconds before considering anchor disconnected
+
+def get_all_anchors_status(current_anchors):
+    """
+    Build status for all 8 anchors (IDs 0-7)
+    Returns dict with anchor data and connection status
+    """
+    global anchor_last_seen
+    current_time = time.time()
+
+    # Update last seen times for anchors with current data
+    for anchor_id, distance in current_anchors.items():
+        anchor_last_seen[anchor_id] = current_time
+
+    # Build complete anchor status
+    all_anchors = {}
+    for anchor_id in ['0', '1', '2', '3', '4', '5', '6', '7']:
+        if anchor_id in anchor_last_seen:
+            time_since_seen = current_time - anchor_last_seen[anchor_id]
+            is_connected = time_since_seen < ANCHOR_TIMEOUT
+
+            all_anchors[anchor_id] = {
+                'distance': current_anchors.get(anchor_id, None),
+                'connected': is_connected,
+                'last_seen': anchor_last_seen[anchor_id]
+            }
+        else:
+            # Never seen this anchor
+            all_anchors[anchor_id] = {
+                'distance': None,
+                'connected': False,
+                'last_seen': None
+            }
+
+    return all_anchors
+
 def parse_uwb_packet(data):
     """Parse CmdM:4[ format - extract up to 8 anchor distances"""
     header = b'CmdM:4['
@@ -67,12 +105,16 @@ def read_uwb_data(port='/dev/ttyACM0'):
     global latest_data
 
     print(f"Starting UWB data reader on {port}")
-    print("Scanning for anchors at positions:")
-    print("  ID 0→pos 5, ID 1→pos 7, ID 2→pos 9, ID 3→pos 11")
-    print("  ID 4→pos 13, ID 5→pos 15, ID 6→pos 17, ID 7→pos 19")
 
-    ser = serial.Serial(port, 115200, timeout=0.1)
-    time.sleep(0.5)
+    try:
+        ser = serial.Serial(port, 115200, timeout=0.1)
+        time.sleep(0.5)
+    except serial.SerialException as e:
+        print(f"\nError: Could not open {port}: {e}")
+        print("\nPlease specify the correct port. Example:")
+        print(f"  python3 uwb_server.py /dev/ttyACM1 8080")
+        import sys
+        sys.exit(1)
 
     buffer = b''
     packet_count = 0
@@ -103,9 +145,12 @@ def read_uwb_data(port='/dev/ttyACM0'):
                                 detected_anchors.update(new_anchors)
                                 print(f"✓ Detected anchors: {sorted(detected_anchors, key=int)}")
 
+                            # Get full status for all 8 anchors
+                            all_anchors_status = get_all_anchors_status(anchors)
+
                             latest_data = {
                                 'timestamp': time.time(),
-                                'anchors': anchors,
+                                'anchors': all_anchors_status,
                                 'packet_count': packet_count,
                                 'device_port': port,
                                 'format': f'CmdM:4[ - {len(anchors)} Anchors'
@@ -142,15 +187,48 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
         pass
 
 def run_server(port=8080):
-    server = HTTPServer(('0.0.0.0', port), UWBRequestHandler)
-    print(f"\nServer running on http://localhost:{port}")
-    server.serve_forever()
+    try:
+        server = HTTPServer(('0.0.0.0', port), UWBRequestHandler)
+        print(f"\nServer running on http://localhost:{port}")
+        server.serve_forever()
+    except OSError as e:
+        if e.errno == 98:  # Address already in use
+            print(f"\nError: Port {port} is already in use!")
+            print("\nOptions:")
+            print(f"  1. Kill the existing server:")
+            print(f"     pkill -f 'uwb_server'")
+            print(f"  2. Use a different port:")
+            print(f"     python3 uwb_server.py /dev/ttyACM0 {port + 1}")
+            import sys
+            sys.exit(1)
+        else:
+            raise
 
 if __name__ == "__main__":
     import sys
+    import os
 
-    uwb_port = sys.argv[1] if len(sys.argv) > 1 else '/dev/ttyACM0'
+    # Parse command line arguments
     http_port = int(sys.argv[2]) if len(sys.argv) > 2 else 8080
+
+    # Auto-detect UWB port if not specified
+    if len(sys.argv) > 1:
+        uwb_port = sys.argv[1]
+    else:
+        # Try ACM0 first, then ACM1
+        uwb_port = None
+        for port_candidate in ['/dev/ttyACM0', '/dev/ttyACM1']:
+            if os.path.exists(port_candidate):
+                uwb_port = port_candidate
+                print(f"Auto-detected device at {uwb_port}")
+                break
+
+        if uwb_port is None:
+            print("Error: No UWB device found!")
+            print("\nSearched for: /dev/ttyACM0, /dev/ttyACM1")
+            print("\nPlease connect a device or specify the port manually:")
+            print("  python3 uwb_server.py /dev/ttyACM0 8080")
+            sys.exit(1)
 
     uwb_thread = threading.Thread(target=read_uwb_data, args=(uwb_port,), daemon=True)
     uwb_thread.start()
