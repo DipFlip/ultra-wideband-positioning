@@ -38,24 +38,24 @@ Configure at least one device as a **tag** (moving point) and at least one as a 
 
 | Device | ID | Role | Channel | Rate | Description |
 |--------|----|----|---------|------|-------------|
-| Tag | 0 | 0 (Tag) | 0 (Ch 9) | 1 (6.8M) | Moving device to track |
-| Base 1 | 0 | 1 (Base) | 0 (Ch 9) | 1 (6.8M) | Primary anchor (same ID as tag) |
-| Base 2 | 1 | 1 (Base) | 0 (Ch 9) | 1 (6.8M) | Secondary anchor |
-| Base 3 | 2 | 1 (Base) | 0 (Ch 9) | 1 (6.8M) | Tertiary anchor |
+| Tag | 0 | 0 (Tag) | 1 (Ch 5) | 1 (6.8M) | Moving device to track |
+| Base 1 | 0 | 1 (Base) | 1 (Ch 5) | 1 (6.8M) | Primary anchor (same ID as tag) |
+| Base 2 | 1 | 1 (Base) | 1 (Ch 5) | 1 (6.8M) | 2nd anchor |
+| Base 3 | 2 | 1 (Base) | 1 (Ch 5) | 1 (6.8M) | 3rd anchor |
 
 **Configuration commands:**
 ```bash
 # Tag (ID:0)
-python3 bu03_util.py set 0 0 0 1
+python3 bu03_util.py set 0 0 1 1
 
 # Base Station 1 (ID:0, same as tag)
-python3 bu03_util.py set 0 1 0 1
+python3 bu03_util.py set 0 1 1 1
 
 # Base Station 2 (ID:1)
-python3 bu03_util.py set 1 1 0 1
+python3 bu03_util.py set 1 1 1 1
 
 # Base Station 3 (ID:2)
-python3 bu03_util.py set 2 1 0 1
+python3 bu03_util.py set 2 1 1 1
 ```
 
 ## Interactive Commands
