@@ -26,6 +26,12 @@ latest_data = {
         'num_anchors': 0,
         'residual': None,
         'velocity': {'x': 0, 'y': 0, 'z': 0}
+    },
+    'imu': {
+        'acc_x': 0,
+        'acc_y': 0,
+        'acc_z': 0,
+        'angle': 0
     }
 }
 
@@ -113,6 +119,73 @@ def parse_uwb_packet(data):
 
     return anchors if anchors else None
 
+def parse_imu_data(response):
+    """Parse AT+GETSENSOR response to extract IMU data
+    NOTE: This only works on the TTL port, not the USB port of the BU03 module."""
+    imu_data = {'acc_x': 0, 'acc_y': 0, 'acc_z': 0, 'angle': 0}
+
+    try:
+        lines = response.split('\n')
+        acc_values = []
+
+        for line in lines:
+            line = line.strip()
+            if 'acc_x:' in line or 'acc_y:' in line or 'acc_z:' in line:
+                try:
+                    value = float(line.split(':')[1].strip())
+                    acc_values.append(value)
+                except:
+                    pass
+            elif 'angle:' in line:
+                try:
+                    imu_data['angle'] = float(line.split(':')[1].strip())
+                except:
+                    pass
+
+        # Assign acc values in order (x, y, z)
+        if len(acc_values) >= 3:
+            imu_data['acc_x'] = acc_values[0]
+            imu_data['acc_y'] = acc_values[1]
+            imu_data['acc_z'] = acc_values[2]
+
+    except Exception as e:
+        print(f"Error parsing IMU data: {e}")
+
+    return imu_data
+
+def read_imu_data(ser):
+    """Send AT+GETSENSOR command and read IMU data
+    NOTE: This only works on the TTL port, not the USB port of the BU03 module."""
+    global latest_data
+
+    while True:
+        try:
+            # Send AT+GETSENSOR command
+            ser.write(b'AT+GETSENSOR\r\n')
+            time.sleep(0.1)
+
+            # Read response
+            response = b''
+            start_time = time.time()
+            while time.time() - start_time < 0.5:
+                if ser.in_waiting > 0:
+                    response += ser.read(ser.in_waiting)
+                    time.sleep(0.05)
+                elif response and b'OK' in response:
+                    break
+
+            # Parse IMU data
+            response_str = response.decode('utf-8', errors='ignore')
+            if 'acc' in response_str:
+                imu_data = parse_imu_data(response_str)
+                latest_data['imu'] = imu_data
+
+        except Exception as e:
+            print(f"Error reading IMU data: {e}")
+
+        # Read IMU data every 0.5 seconds
+        time.sleep(0.5)
+
 def read_uwb_data(port='/dev/ttyACM0'):
     """Read UWB data"""
     global latest_data
@@ -139,6 +212,7 @@ def read_uwb_data(port='/dev/ttyACM0'):
                 chunk = ser.read(ser.in_waiting)
                 buffer += chunk
 
+                # Process UWB packets
                 while b'CmdM:4[' in buffer and b'\r\n' in buffer:
                     start = buffer.find(b'CmdM:4[')
                     end = buffer.find(b'\r\n', start)
@@ -188,14 +262,14 @@ def read_uwb_data(port='/dev/ttyACM0'):
                                         position_data['velocity']['y'] = result['velocity'][1]
                                         position_data['velocity']['z'] = result['velocity'][2]
 
-                            latest_data = {
+                            latest_data.update({
                                 'timestamp': time.time(),
                                 'anchors': all_anchors_status,
                                 'packet_count': packet_count,
                                 'device_port': port,
                                 'format': f'CmdM:4[ - {len(anchors)} Anchors',
                                 'position': position_data
-                            }
+                            })
 
                 if len(buffer) > 5000:
                     buffer = buffer[-2000:]
@@ -203,7 +277,7 @@ def read_uwb_data(port='/dev/ttyACM0'):
             time.sleep(0.01)
 
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"Error reading UWB data: {e}")
             time.sleep(1)
 
 class UWBRequestHandler(SimpleHTTPRequestHandler):
@@ -252,10 +326,6 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
                     if 'measurement_noise' in params:
                         position_solver.kalman.update_measurement_noise(params['measurement_noise'])
                         print(f"✓ Updated measurement_noise: {params['measurement_noise']}")
-
-                    if 'outlier_threshold' in params:
-                        position_solver.outlier_threshold = params['outlier_threshold']
-                        print(f"✓ Updated outlier_threshold: {params['outlier_threshold']}")
 
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')

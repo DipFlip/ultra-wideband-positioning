@@ -13,22 +13,22 @@
   },
   "anchors": {
     "0": {
-      "position": [0.0, 3.0, 1.0],
+      "position": [0.0, 2.5, 0.0],
       "description": "North-West corner, ceiling",
       "enabled": true
     },
     "1": {
-      "position": [4.0, 3.0, 1.0],
+      "position": [3.5, 3.0, 1.0],
       "description": "North-East corner, ceiling",
       "enabled": true
     },
     "2": {
-      "position": [4.0, 0.0, 1.0],
+      "position": [3.5, 0.4, 0.6],
       "description": "South-East corner, mid-height",
       "enabled": true
     },
     "3": {
-      "position": [0.0, 0.0, 1.7],
+      "position": [0.0, 0.5, 2.4],
       "description": "South-West corner, mid-height",
       "enabled": true
     },
@@ -59,9 +59,10 @@
     "outlier_threshold": 0.3,
     "kalman_filter": {
       "enabled": true,
-      "process_noise": 0.1,
-      "measurement_noise": 0.2,
-      "initial_variance": 1.0
+      "process_noise": 0.002,
+      "measurement_noise": 0.09,
+      "initial_variance": 1.0,
+      "_comment": "Process noise: how much to trust motion model (lower = smoother). Measurement noise: how much to trust new positions (higher = smoother but more lag). Current settings smooth over ~2-3 seconds."
     }
   }
 }

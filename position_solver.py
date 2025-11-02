@@ -18,11 +18,13 @@ class KalmanFilter:
         self.covariance = np.eye(6) * initial_variance
 
         # Process noise (how much we trust the motion model)
-        self.Q = np.eye(6) * process_noise
+        # NO MINIMUM - allow very low values for smooth tracking
+        self.Q = np.eye(6) * max(0.0, process_noise)
         self.Q[3:, 3:] *= 2  # Higher noise for velocity
 
         # Measurement noise (how much we trust the measurements)
-        self.R = np.eye(3) * measurement_noise
+        # Higher = smoother but more lag
+        self.R = np.eye(3) * max(0.01, measurement_noise)
 
         self.last_update_time = None
         self.initialized = False
@@ -73,13 +75,13 @@ class KalmanFilter:
         return self.state[3:].copy()
 
     def update_process_noise(self, process_noise):
-        """Update process noise parameter"""
-        self.Q = np.eye(6) * process_noise
+        """Update process noise parameter - no minimum constraint"""
+        self.Q = np.eye(6) * max(0.0, process_noise)
         self.Q[3:, 3:] *= 2
 
     def update_measurement_noise(self, measurement_noise):
-        """Update measurement noise parameter"""
-        self.R = np.eye(3) * measurement_noise
+        """Update measurement noise parameter - allow very low values"""
+        self.R = np.eye(3) * max(0.01, measurement_noise)
 
     def process(self, measurement):
         """Process a new measurement and return filtered position"""
@@ -130,10 +132,11 @@ class PositionSolver:
 
         if self.use_kalman:
             self.kalman = KalmanFilter(
-                process_noise=kalman_config.get('process_noise', 0.1),
-                measurement_noise=kalman_config.get('measurement_noise', 0.2),
+                process_noise=kalman_config.get('process_noise', 0.002),
+                measurement_noise=kalman_config.get('measurement_noise', 0.09),
                 initial_variance=kalman_config.get('initial_variance', 1.0)
             )
+            print(f"  Kalman filter enabled (process_noise={kalman_config.get('process_noise', 0.002)}, measurement_noise={kalman_config.get('measurement_noise', 0.09)})")
 
         # Get room bounds for validation
         room = self.config.get('room', {})

@@ -80,3 +80,14 @@ quit                # Exit
 ## Reference
 
 See `references/` for official AT command documentation.
+
+## IMU/Accelerometer Data Limitations
+
+**Note:** IMU (accelerometer) data can **only** be read from the **"TTL"** USB port using AT commands (e.g., `AT+GETSENSOR`). It is **NOT available** on the **"USB"** port where distance measurements are streamed.
+
+- **USB Port** (shows as `/dev/ttyACM0`): Streams UWB distance data in binary `CmdM:4[` packets (~20 Hz), but does **not** respond to AT commands
+- **TTL Port** (shows as `/dev/ttyUSB0` or `/dev/ttyUSB1`): Responds to AT commands including `AT+GETSENSOR` for IMU data (~26 Hz polling rate), but does **not** stream UWB distance data
+
+We attempted to use both USB cables simultaneously to read both data streams, but the device does not support this mode - only one port can be active at a time.
+
+**Potential Future Improvement:** Someone with firmware modification capabilities could potentially modify the device firmware to output both acceleration data and distance measurements on the USB port simultaneously.
