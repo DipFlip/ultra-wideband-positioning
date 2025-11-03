@@ -275,6 +275,32 @@
             border: none;
         }
 
+        input[type="number"] {
+            width: 80px;
+            padding: 5px 8px;
+            border: 2px solid #e0e0e0;
+            border-radius: 5px;
+            font-size: 0.9em;
+            text-align: center;
+            background: white;
+            color: #333;
+        }
+
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .control-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .control-row input[type="range"] {
+            flex: 1;
+        }
+
         .connection-status {
             position: fixed;
             top: 20px;
@@ -377,9 +403,12 @@
                     <div class="control-item">
                         <div class="control-label">
                             <span>Process Noise</span>
-                            <span class="control-value" id="processNoiseValue">0.002</span>
+                            <span class="control-value" id="processNoiseValue">0.0020</span>
                         </div>
-                        <input type="range" id="processNoise" min="0.001" max="0.20" step="0.001" value="0.002">
+                        <div class="control-row">
+                            <input type="range" id="processNoise" min="0.0001" max="0.20" step="0.0001" value="0.002">
+                            <input type="number" id="processNoiseInput" min="0.0001" max="0.20" step="0.0001" value="0.002">
+                        </div>
                         <div class="control-hint">How much to trust motion model (lower = smoother)</div>
                     </div>
                     <div class="control-item">
@@ -387,8 +416,22 @@
                             <span>Measurement Noise</span>
                             <span class="control-value" id="measurementNoiseValue">0.09</span>
                         </div>
-                        <input type="range" id="measurementNoise" min="0.01" max="2.0" step="0.01" value="0.09">
+                        <div class="control-row">
+                            <input type="range" id="measurementNoise" min="0.01" max="2.0" step="0.01" value="0.09">
+                            <input type="number" id="measurementNoiseInput" min="0.01" max="2.0" step="0.01" value="0.09">
+                        </div>
                         <div class="control-hint">How much to trust new positions (higher = smoother but more lag)</div>
+                    </div>
+                    <div class="control-item">
+                        <div class="controls-title" style="margin-top: 15px; margin-bottom: 10px;">Trail Visualization</div>
+                        <div style="display: flex; gap: 10px;">
+                            <button id="trailToggle" style="flex: 1; padding: 10px; border: none; border-radius: 5px; background: #667eea; color: white; font-weight: bold; cursor: pointer; font-size: 0.9em;">
+                                Show Trail
+                            </button>
+                            <button id="trailClear" style="flex: 1; padding: 10px; border: none; border-radius: 5px; background: #f44336; color: white; font-weight: bold; cursor: pointer; font-size: 0.9em;">
+                                Clear Trail
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -517,7 +560,14 @@
                 // Map real coords to Three.js: X=X, Y=Z(up), Z=depth-Y(north inverted)
                 if (tagMesh && anchorConfig) {
                     const roomDepth = anchorConfig.room.depth || 3;
-                    tagMesh.position.set(position.x, position.z, roomDepth - position.y);
+                    const x = position.x;
+                    const y = position.z;
+                    const z = roomDepth - position.y;
+
+                    tagMesh.position.set(x, y, z);
+
+                    // Add point to trail
+                    addTrailPoint(x, y, z);
                 }
             } else {
                 document.getElementById('posX').textContent = '--';
@@ -545,6 +595,12 @@
         let anchorMeshes = {};
         let tagMesh;
         let anchorConfig = null;
+
+        // Trail tracking
+        let trailPoints = [];
+        let trailLine = null;
+        let trailEnabled = false;
+        const MAX_TRAIL_POINTS = 500; // Maximum number of points to keep in trail
 
         function init3DScene() {
             const container = document.getElementById('viewer3d');
@@ -724,6 +780,52 @@
             scene.add(tagMesh);
         }
 
+        function addTrailPoint(x, y, z) {
+            if (!trailEnabled) return;
+
+            // Add new point to trail
+            trailPoints.push(new THREE.Vector3(x, y, z));
+
+            // Keep only the last MAX_TRAIL_POINTS points
+            if (trailPoints.length > MAX_TRAIL_POINTS) {
+                trailPoints.shift();
+            }
+
+            updateTrailLine();
+        }
+
+        function updateTrailLine() {
+            // Remove old trail line if it exists
+            if (trailLine) {
+                scene.remove(trailLine);
+                trailLine.geometry.dispose();
+                trailLine.material.dispose();
+            }
+
+            // Create new trail line if we have at least 2 points
+            if (trailPoints.length >= 2) {
+                const geometry = new THREE.BufferGeometry().setFromPoints(trailPoints);
+                const material = new THREE.LineBasicMaterial({
+                    color: 0xff6b35,
+                    linewidth: 2,
+                    opacity: 0.7,
+                    transparent: true
+                });
+                trailLine = new THREE.Line(geometry, material);
+                scene.add(trailLine);
+            }
+        }
+
+        function clearTrail() {
+            trailPoints = [];
+            if (trailLine) {
+                scene.remove(trailLine);
+                trailLine.geometry.dispose();
+                trailLine.material.dispose();
+                trailLine = null;
+            }
+        }
+
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
@@ -745,17 +847,40 @@
         function setupParameterControls() {
             const processNoiseSlider = document.getElementById('processNoise');
             const measurementNoiseSlider = document.getElementById('measurementNoise');
+            const processNoiseInput = document.getElementById('processNoiseInput');
+            const measurementNoiseInput = document.getElementById('measurementNoiseInput');
 
             const processNoiseValue = document.getElementById('processNoiseValue');
             const measurementNoiseValue = document.getElementById('measurementNoiseValue');
 
-            // Update displayed values
+            // Update displayed values and sync slider/input
             processNoiseSlider.addEventListener('input', (e) => {
-                processNoiseValue.textContent = parseFloat(e.target.value).toFixed(3);
+                const value = parseFloat(e.target.value);
+                processNoiseValue.textContent = value.toFixed(4);
+                processNoiseInput.value = value;
             });
 
             measurementNoiseSlider.addEventListener('input', (e) => {
-                measurementNoiseValue.textContent = parseFloat(e.target.value).toFixed(2);
+                const value = parseFloat(e.target.value);
+                measurementNoiseValue.textContent = value.toFixed(2);
+                measurementNoiseInput.value = value;
+            });
+
+            // Sync text input to slider
+            processNoiseInput.addEventListener('input', (e) => {
+                let value = parseFloat(e.target.value);
+                // Clamp value to valid range
+                value = Math.max(0.0001, Math.min(0.20, value));
+                processNoiseSlider.value = value;
+                processNoiseValue.textContent = value.toFixed(4);
+            });
+
+            measurementNoiseInput.addEventListener('input', (e) => {
+                let value = parseFloat(e.target.value);
+                // Clamp value to valid range
+                value = Math.max(0.01, Math.min(2.0, value));
+                measurementNoiseSlider.value = value;
+                measurementNoiseValue.textContent = value.toFixed(2);
             });
 
             // Send updates to server on change (not while dragging)
@@ -765,6 +890,21 @@
 
             measurementNoiseSlider.addEventListener('change', (e) => {
                 updateParameter('measurement_noise', parseFloat(e.target.value));
+            });
+
+            // Send updates to server when text input changes
+            processNoiseInput.addEventListener('change', (e) => {
+                let value = parseFloat(e.target.value);
+                value = Math.max(0.0001, Math.min(0.20, value));
+                e.target.value = value; // Update to clamped value
+                updateParameter('process_noise', value);
+            });
+
+            measurementNoiseInput.addEventListener('change', (e) => {
+                let value = parseFloat(e.target.value);
+                value = Math.max(0.01, Math.min(2.0, value));
+                e.target.value = value; // Update to clamped value
+                updateParameter('measurement_noise', value);
             });
         }
 
@@ -785,6 +925,31 @@
             });
         }
 
+        // ===== Trail Controls =====
+        function setupTrailControls() {
+            const toggleButton = document.getElementById('trailToggle');
+            const clearButton = document.getElementById('trailClear');
+
+            // Toggle trail on/off
+            toggleButton.addEventListener('click', () => {
+                trailEnabled = !trailEnabled;
+                toggleButton.textContent = trailEnabled ? 'Hide Trail' : 'Show Trail';
+                toggleButton.style.background = trailEnabled ? '#4CAF50' : '#667eea';
+
+                // If disabling, hide the trail but keep the points
+                if (!trailEnabled && trailLine) {
+                    trailLine.visible = false;
+                } else if (trailEnabled && trailLine) {
+                    trailLine.visible = true;
+                }
+            });
+
+            // Clear trail
+            clearButton.addEventListener('click', () => {
+                clearTrail();
+            });
+        }
+
         // ===== Initialize Everything =====
         init3DScene();
 
@@ -793,6 +958,9 @@
 
         // Setup parameter controls
         setupParameterControls();
+
+        // Setup trail controls
+        setupTrailControls();
 
         // Poll for data every 100ms
         setInterval(fetchData, 100);
