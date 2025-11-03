@@ -13,6 +13,28 @@ python3 bu03_util.py info                    # Show version and config
 python3 bu03_util.py set <id> <role> <ch> <rate>  # Configure device
 ```
 
+## Web Dashboard (3D Visualization)
+
+Start the real-time 3D positioning dashboard:
+
+```bash
+# Auto-detect device port (tries /dev/ttyACM0, /dev/ttyACM1)
+python3 uwb_server.py
+
+# Or specify port and HTTP port manually
+python3 uwb_server.py /dev/ttyACM0 8080
+```
+
+Then open your browser to `http://localhost:8080`
+
+**Features:**
+- Real-time 3D visualization of tag position
+- Use up to 8 anchors simultaneously
+- Kalman filter for smoother position tracking
+- Adjustable filter parameters in real-time
+- Position trail visualization
+- Connection status monitoring
+
 ## Connection
 
 - **Port:** `/dev/ttyUSB0`
@@ -59,6 +81,8 @@ python3 bu03_util.py set 2 1 1 1
 ```
 
 ## Interactive Commands
+
+When running `python3 bu03_util.py` in interactive mode:
 
 ```
 cfg                 # Show current configuration
