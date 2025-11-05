@@ -493,6 +493,12 @@
                     </button>
                 </div>
             </div>
+            <div class="control-item">
+                <button id="calPlotAll" style="width: 100%; padding: 10px; border: none; border-radius: 5px; background: #9C27B0; color: white; font-weight: bold; cursor: pointer;">
+                    📊 Compare All Anchors
+                </button>
+                <div class="control-hint">Show overlay plot of all calibrated anchors</div>
+            </div>
             <div class="control-item" id="calResults" style="display: none; background: #e8f5e9; padding: 12px; border-radius: 5px; margin-top: 10px;">
                 <div style="font-weight: bold; color: #2e7d32; margin-bottom: 8px;">Calibration Results:</div>
                 <div style="font-size: 0.9em;">
@@ -506,9 +512,9 @@
             </div>
             <div class="control-item" style="margin-top: 10px;">
                 <button id="calApply" style="width: 100%; padding: 12px; border: none; border-radius: 5px; background: #FF9800; color: white; font-weight: bold; cursor: pointer; font-size: 1em;">
-                    Apply to Device (AT+SETDEV)
+                    Apply Average to Device (AT+SETDEV)
                 </button>
-                <div class="control-hint">Sends calibration to device via AT commands (requires TTL port)</div>
+                <div class="control-hint">Averages all calibrated anchors and programs to tag (requires TTL port)</div>
             </div>
         </div>
     </div>
@@ -1035,6 +1041,7 @@
             const fitBtn = document.getElementById('calFit');
             const clearBtn = document.getElementById('calClear');
             const applyBtn = document.getElementById('calApply');
+            const plotAllBtn = document.getElementById('calPlotAll');
             const trueDist = document.getElementById('calTrueDist');
 
             // Load initial calibration status
@@ -1153,7 +1160,7 @@
 
             // Apply to device
             applyBtn.addEventListener('click', async () => {
-                if (!confirm('Apply calibration to device via AT+SETDEV?\n\nNote: This requires the TTL port to be connected and may cause the device to reboot.')) {
+                if (!confirm('Apply average calibration to device via AT+SETDEV?\n\nThis will:\n- Average calibration from all fitted anchors\n- Program to tag device\n- Cause device to reboot\n\nRequires TTL port. Continue?')) {
                     return;
                 }
 
@@ -1167,7 +1174,7 @@
                     const data = await response.json();
 
                     if (data.status === 'ok') {
-                        alert('Calibration applied to device successfully!');
+                        alert(`Calibration applied to device!\n\nAverage calibration:\nScale: ${data.scale_factor.toFixed(4)}\nOffset: ${data.offset_mm.toFixed(2)}mm\n\nUsed ${data.num_anchors_used} calibrated anchor(s)`);
                     } else {
                         alert('Error: ' + data.message);
                     }
@@ -1175,6 +1182,11 @@
                     console.error('Error applying calibration:', error);
                     alert('Failed to apply calibration: ' + error.message);
                 }
+            });
+
+            // Plot all anchors
+            plotAllBtn.addEventListener('click', () => {
+                drawMultiAnchorPlot();
             });
         }
 
@@ -1316,6 +1328,146 @@
                         legend: {
                             display: true,
                             position: 'bottom'
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Measured Distance (m)'
+                            },
+                            ticks: {
+                                callback: function(value) { return value.toFixed(2); }
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'True Distance (m)'
+                            },
+                            ticks: {
+                                callback: function(value) { return value.toFixed(2); }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function drawMultiAnchorPlot() {
+            const perAnchor = calibrationData?.per_anchor || {};
+
+            // Destroy existing chart
+            if (calibrationChart) {
+                calibrationChart.destroy();
+            }
+
+            const datasets = [];
+            const colors = [
+                '#667eea', // purple
+                '#f44336', // red
+                '#4CAF50', // green
+                '#FF9800', // orange
+                '#2196F3', // blue
+                '#E91E63', // pink
+                '#00BCD4', // cyan
+                '#FFC107'  // amber
+            ];
+
+            let allMeasuredDistances = [];
+
+            // Add measurements and fit lines for each anchor
+            for (let anchorId = 0; anchorId < 8; anchorId++) {
+                const anchor = perAnchor[String(anchorId)];
+                if (!anchor) continue;
+
+                const measurements = anchor.measurements || [];
+                if (measurements.length < 2) continue;
+
+                const scale = anchor.scale_factor || 1.0;
+                const offset = anchor.offset_mm || 0.0;
+
+                // Skip if not calibrated
+                if (scale === 1.0 && offset === 0.0) continue;
+
+                const color = colors[anchorId];
+
+                // Add measurement points
+                datasets.push({
+                    label: `A${anchorId} Measurements`,
+                    data: measurements.map(m => ({ x: m.measured_distance_m, y: m.true_distance_m })),
+                    backgroundColor: color,
+                    borderColor: color,
+                    pointRadius: 5,
+                    pointHoverRadius: 7
+                });
+
+                // Add fit line
+                const measuredDist = measurements.map(m => m.measured_distance_m);
+                allMeasuredDistances.push(...measuredDist);
+                const minMeas = Math.min(...measuredDist);
+                const maxMeas = Math.max(...measuredDist);
+
+                datasets.push({
+                    label: `A${anchorId} Fit`,
+                    data: [
+                        { x: minMeas, y: scale * minMeas + offset / 1000.0 },
+                        { x: maxMeas, y: scale * maxMeas + offset / 1000.0 }
+                    ],
+                    type: 'line',
+                    borderColor: color,
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0
+                });
+            }
+
+            if (datasets.length === 0) {
+                alert('No calibrated anchors to plot. Fit calibration for at least one anchor first.');
+                return;
+            }
+
+            // Add perfect line
+            const minAll = Math.min(...allMeasuredDistances);
+            const maxAll = Math.max(...allMeasuredDistances);
+            datasets.push({
+                label: 'Perfect (y=x)',
+                data: [
+                    { x: minAll, y: minAll },
+                    { x: maxAll, y: maxAll }
+                ],
+                type: 'line',
+                borderColor: '#999',
+                backgroundColor: 'transparent',
+                borderWidth: 1,
+                borderDash: [5, 5],
+                pointRadius: 0,
+                tension: 0
+            });
+
+            // Show results panel and draw chart
+            document.getElementById('calResults').style.display = 'block';
+
+            const ctx = document.getElementById('calPlot').getContext('2d');
+            calibrationChart = new Chart(ctx, {
+                type: 'scatter',
+                data: { datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'All Anchors Calibration Comparison',
+                            font: { size: 14, weight: 'bold' }
+                        },
+                        legend: {
+                            display: true,
+                            position: 'bottom',
+                            labels: {
+                                font: { size: 10 }
+                            }
                         }
                     },
                     scales: {

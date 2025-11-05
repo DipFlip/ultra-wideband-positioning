@@ -201,9 +201,9 @@ def parse_uwb_packet(data):
     for anchor_id, pos in anchor_positions.items():
         if len(values) > pos and 100 < values[pos] < 10000:
             raw_distance = values[pos] / 1000.0
-            # Apply calibration correction
-            calibrated_distance = apply_calibration(anchor_id, raw_distance)
-            anchors[anchor_id] = calibrated_distance
+            # Software calibration disabled - calibration applied at device level via AT+SETDEV
+            # calibrated_distance = apply_calibration(anchor_id, raw_distance)
+            anchors[anchor_id] = raw_distance
 
     return anchors if anchors else None
 
@@ -585,27 +585,63 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
             try:
                 from bu03_util import BU03Device
 
-                # Get device parameters from calibration config
-                dev_params = calibration_config.get('device_parameters', {})
-                antenna_delay = dev_params.get('antenna_delay', 16336)
-                correction_a = dev_params.get('correction_a', 1.0)
-                correction_b = dev_params.get('correction_b', 0.0)
+                # Calculate average calibration across all anchors with data
+                per_anchor = calibration_config.get('per_anchor', {})
+
+                # Collect all fitted calibrations
+                scale_factors = []
+                offsets = []
+
+                for anchor_id in range(8):
+                    anchor_cal = per_anchor.get(str(anchor_id), {})
+                    measurements = anchor_cal.get('measurements', [])
+
+                    if len(measurements) >= 2:  # Only use anchors with fitted calibration
+                        scale = anchor_cal.get('scale_factor', 1.0)
+                        offset = anchor_cal.get('offset_mm', 0.0)
+
+                        # Only include if calibrated (not default values)
+                        if scale != 1.0 or offset != 0.0:
+                            scale_factors.append(scale)
+                            offsets.append(offset)
+
+                # Use average if we have calibrated anchors, otherwise defaults
+                if scale_factors:
+                    avg_scale = sum(scale_factors) / len(scale_factors)
+                    avg_offset = sum(offsets) / len(offsets)
+                    print(f"Using average calibration: scale={avg_scale:.4f}, offset={avg_offset:.2f}mm")
+                    print(f"  (averaged across {len(scale_factors)} calibrated anchors)")
+                else:
+                    avg_scale = 1.0
+                    avg_offset = 0.0
+                    print("No calibrated anchors found, using defaults")
 
                 # Connect to device and apply parameters
                 with BU03Device() as device:
                     device.set_device_params(
-                        antenna_delay=antenna_delay,
-                        correction_a=correction_a,
-                        correction_b=correction_b
+                        label_rate=5,           # Default tag refresh rate
+                        antenna_delay=16336,    # Default antenna delay
+                        kalman_enable=1,        # Enable Kalman filter
+                        kalman_q=0.018,         # Default process noise
+                        kalman_r=0.642,         # Default measurement noise
+                        correction_a=avg_scale,
+                        correction_b=avg_offset / 1000.0,  # Convert mm to m
+                        positioning_enable=0,   # Disable on-device positioning
+                        positioning_dim=0
                     )
 
-                print(f"✓ Applied calibration to device: antenna_delay={antenna_delay}, a={correction_a}, b={correction_b}")
+                print(f"✓ Applied calibration to device: a={avg_scale:.4f}, b={avg_offset:.2f}mm")
 
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
                 self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
-                self.wfile.write(json.dumps({'status': 'ok'}).encode())
+                self.wfile.write(json.dumps({
+                    'status': 'ok',
+                    'scale_factor': avg_scale,
+                    'offset_mm': avg_offset,
+                    'num_anchors_used': len(scale_factors)
+                }).encode())
 
             except Exception as e:
                 print(f"Error applying device calibration: {e}")
