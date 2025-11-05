@@ -581,6 +581,33 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
 
+        elif self.path == '/calibration/read_device':
+            try:
+                from bu03_util import BU03Device
+
+                # Read current device parameters
+                with BU03Device() as device:
+                    response = device.get_device_params()
+
+                # Parse the response if possible
+                # Response format unclear from docs, so just return raw
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    'status': 'ok',
+                    'response': response
+                }).encode())
+
+            except Exception as e:
+                print(f"Error reading device parameters: {e}")
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+
         elif self.path == '/calibration/apply_device':
             try:
                 from bu03_util import BU03Device

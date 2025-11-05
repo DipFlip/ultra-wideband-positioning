@@ -50,6 +50,15 @@ Day 2: Calibrate Anchor 1
 
 ## Calibration Theory
 
+### UWB Channel Specifications
+
+The BU03 UWB module operates on two configurable channels:
+- **Channel 5 (CH5)**: 6489.5 MHz center frequency
+- **Channel 9 (CH9)**: 7987.2 MHz center frequency
+- **Channel Bandwidth**: 499.2 MHz
+
+Channel is configured via `AT+SETCFG` command (x3 parameter: 0=CH9, 1=CH5).
+
 ### Why Calibrate?
 
 UWB distance measurements can have systematic errors due to:

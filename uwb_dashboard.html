@@ -511,10 +511,19 @@
                 </div>
             </div>
             <div class="control-item" style="margin-top: 10px;">
-                <button id="calApply" style="width: 100%; padding: 12px; border: none; border-radius: 5px; background: #FF9800; color: white; font-weight: bold; cursor: pointer; font-size: 1em;">
-                    Apply Average to Device (AT+SETDEV)
-                </button>
-                <div class="control-hint">Averages all calibrated anchors and programs to tag (requires TTL port)</div>
+                <div style="display: flex; gap: 10px;">
+                    <button id="calRead" style="flex: 1; padding: 12px; border: none; border-radius: 5px; background: #2196F3; color: white; font-weight: bold; cursor: pointer; font-size: 0.95em;">
+                        📖 Read Device Params
+                    </button>
+                    <button id="calApply" style="flex: 1; padding: 12px; border: none; border-radius: 5px; background: #FF9800; color: white; font-weight: bold; cursor: pointer; font-size: 0.95em;">
+                        📝 Apply to Device
+                    </button>
+                </div>
+                <div class="control-hint">Read: Get current AT+SETDEV values | Apply: Program averaged calibration (requires TTL port)</div>
+            </div>
+            <div class="control-item" id="calDeviceParams" style="display: none; background: #e3f2fd; padding: 12px; border-radius: 5px; margin-top: 10px;">
+                <div style="font-weight: bold; color: #1976d2; margin-bottom: 8px;">Current Device Parameters:</div>
+                <div id="calDeviceParamsText" style="font-size: 0.85em; font-family: monospace; white-space: pre-wrap; color: #333;"></div>
             </div>
         </div>
     </div>
@@ -1187,6 +1196,31 @@
             // Plot all anchors
             plotAllBtn.addEventListener('click', () => {
                 drawMultiAnchorPlot();
+            });
+
+            // Read device parameters
+            const readBtn = document.getElementById('calRead');
+            readBtn.addEventListener('click', async () => {
+                try {
+                    const response = await fetch('/calibration/read_device', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({})
+                    });
+
+                    const data = await response.json();
+
+                    if (data.status === 'ok') {
+                        // Display the raw response
+                        document.getElementById('calDeviceParams').style.display = 'block';
+                        document.getElementById('calDeviceParamsText').textContent = data.response;
+                    } else {
+                        alert('Error reading device parameters: ' + data.message);
+                    }
+                } catch (error) {
+                    console.error('Error reading device parameters:', error);
+                    alert('Failed to read device parameters: ' + error.message + '\n\nMake sure TTL port is connected.');
+                }
             });
         }
 
