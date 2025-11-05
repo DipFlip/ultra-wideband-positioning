@@ -11,6 +11,7 @@ import json
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import threading
 from position_solver import PositionSolver
+import numpy as np
 
 latest_data = {
     'timestamp': 0,
@@ -41,6 +42,90 @@ position_solver = None
 # Track last seen time for each anchor
 anchor_last_seen = {}
 ANCHOR_TIMEOUT = 2.0  # Seconds before considering anchor disconnected
+
+# Calibration data
+calibration_config = {}
+
+def load_calibration():
+    """Load calibration data from anchor_config.json"""
+    global calibration_config
+    try:
+        with open('anchor_config.json', 'r') as f:
+            config = json.load(f)
+            calibration_config = config.get('calibration', {
+                'per_anchor': {},
+                'device_parameters': {}
+            })
+    except Exception as e:
+        print(f"Warning: Could not load calibration config: {e}")
+        calibration_config = {
+            'per_anchor': {},
+            'device_parameters': {}
+        }
+
+def save_calibration():
+    """Save calibration data to anchor_config.json"""
+    try:
+        with open('anchor_config.json', 'r') as f:
+            config = json.load(f)
+
+        config['calibration'] = calibration_config
+
+        with open('anchor_config.json', 'w') as f:
+            json.dump(config, f, indent=2)
+
+        return True
+    except Exception as e:
+        print(f"Error saving calibration: {e}")
+        return False
+
+def apply_calibration(anchor_id, raw_distance):
+    """Apply per-anchor calibration correction"""
+    if not calibration_config:
+        return raw_distance
+
+    per_anchor = calibration_config.get('per_anchor', {})
+    anchor_cal = per_anchor.get(str(anchor_id), {})
+
+    scale = anchor_cal.get('scale_factor', 1.0)
+    offset = anchor_cal.get('offset_mm', 0.0)
+
+    # Apply correction: corrected = scale * raw + offset_meters
+    corrected = scale * raw_distance + (offset / 1000.0)
+
+    return corrected
+
+def fit_calibration(anchor_id):
+    """
+    Fit linear calibration model for an anchor using collected measurements
+    Returns (scale_factor, offset_mm, r_squared, error_message)
+    """
+    per_anchor = calibration_config.get('per_anchor', {})
+    anchor_cal = per_anchor.get(str(anchor_id), {})
+    measurements = anchor_cal.get('measurements', [])
+
+    if len(measurements) < 2:
+        return None, None, None, "Need at least 2 measurements"
+
+    # Extract true and measured distances
+    true_distances = np.array([m['true_distance_m'] for m in measurements])
+    measured_distances = np.array([m['measured_distance_m'] for m in measurements])
+
+    # Perform linear regression: true = scale * measured + offset
+    # Solve: [measured, 1] * [scale, offset] = true
+    A = np.column_stack([measured_distances, np.ones(len(measured_distances))])
+    params, residuals, rank, s = np.linalg.lstsq(A, true_distances, rcond=None)
+
+    scale_factor = params[0]
+    offset_m = params[1]
+    offset_mm = offset_m * 1000.0
+
+    # Calculate R-squared
+    ss_res = np.sum((true_distances - (scale_factor * measured_distances + offset_m)) ** 2)
+    ss_tot = np.sum((true_distances - np.mean(true_distances)) ** 2)
+    r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+
+    return scale_factor, offset_mm, r_squared, None
 
 def get_all_anchors_status(current_anchors):
     """
@@ -115,7 +200,10 @@ def parse_uwb_packet(data):
 
     for anchor_id, pos in anchor_positions.items():
         if len(values) > pos and 100 < values[pos] < 10000:
-            anchors[anchor_id] = values[pos] / 1000.0
+            raw_distance = values[pos] / 1000.0
+            # Apply calibration correction
+            calibrated_distance = apply_calibration(anchor_id, raw_distance)
+            anchors[anchor_id] = calibrated_distance
 
     return anchors if anchors else None
 
@@ -300,6 +388,13 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
             except FileNotFoundError:
                 self.wfile.write(b'{}')
 
+        elif self.path == '/calibration/status':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(calibration_config).encode())
+
         elif self.path == '/' or self.path == '/index.html':
             self.send_response(200)
             self.send_header('Content-type', 'text/html')
@@ -310,10 +405,10 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
             super().do_GET()
 
     def do_POST(self):
-        if self.path == '/update_params':
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
 
+        if self.path == '/update_params':
             try:
                 params = json.loads(post_data.decode('utf-8'))
 
@@ -340,6 +435,157 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
                 self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
                 self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+
+        elif self.path == '/calibration/add_measurement':
+            try:
+                data = json.loads(post_data.decode('utf-8'))
+                anchor_id = str(data['anchor_id'])
+                true_distance = float(data['true_distance_m'])
+
+                # Get current measured distance from latest_data
+                current_distance = latest_data['anchors'].get(anchor_id, {}).get('distance')
+
+                if current_distance is None:
+                    raise ValueError(f"No distance measurement available for anchor {anchor_id}")
+
+                # Ensure calibration structure exists
+                if 'per_anchor' not in calibration_config:
+                    calibration_config['per_anchor'] = {}
+                if anchor_id not in calibration_config['per_anchor']:
+                    calibration_config['per_anchor'][anchor_id] = {
+                        'scale_factor': 1.0,
+                        'offset_mm': 0.0,
+                        'measurements': []
+                    }
+
+                # Add measurement
+                measurement = {
+                    'true_distance_m': true_distance,
+                    'measured_distance_m': current_distance,
+                    'timestamp': time.time()
+                }
+                calibration_config['per_anchor'][anchor_id]['measurements'].append(measurement)
+
+                # Save to config file
+                save_calibration()
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    'status': 'ok',
+                    'measurement': measurement,
+                    'total_measurements': len(calibration_config['per_anchor'][anchor_id]['measurements'])
+                }).encode())
+
+            except Exception as e:
+                print(f"Error adding calibration measurement: {e}")
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+
+        elif self.path == '/calibration/fit':
+            try:
+                data = json.loads(post_data.decode('utf-8'))
+                anchor_id = str(data['anchor_id'])
+
+                scale, offset_mm, r_squared, error = fit_calibration(anchor_id)
+
+                if error:
+                    raise ValueError(error)
+
+                # Update calibration parameters
+                calibration_config['per_anchor'][anchor_id]['scale_factor'] = float(scale)
+                calibration_config['per_anchor'][anchor_id]['offset_mm'] = float(offset_mm)
+
+                # Save to config
+                save_calibration()
+
+                print(f"✓ Fitted calibration for anchor {anchor_id}: scale={scale:.4f}, offset={offset_mm:.2f}mm, R²={r_squared:.4f}")
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    'status': 'ok',
+                    'scale_factor': scale,
+                    'offset_mm': offset_mm,
+                    'r_squared': r_squared
+                }).encode())
+
+            except Exception as e:
+                print(f"Error fitting calibration: {e}")
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+
+        elif self.path == '/calibration/clear':
+            try:
+                data = json.loads(post_data.decode('utf-8'))
+                anchor_id = str(data['anchor_id'])
+
+                if anchor_id in calibration_config.get('per_anchor', {}):
+                    calibration_config['per_anchor'][anchor_id]['measurements'] = []
+                    calibration_config['per_anchor'][anchor_id]['scale_factor'] = 1.0
+                    calibration_config['per_anchor'][anchor_id]['offset_mm'] = 0.0
+                    save_calibration()
+
+                print(f"✓ Cleared calibration for anchor {anchor_id}")
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'ok'}).encode())
+
+            except Exception as e:
+                print(f"Error clearing calibration: {e}")
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+
+        elif self.path == '/calibration/apply_device':
+            try:
+                from bu03_util import BU03Device
+
+                # Get device parameters from calibration config
+                dev_params = calibration_config.get('device_parameters', {})
+                antenna_delay = dev_params.get('antenna_delay', 16336)
+                correction_a = dev_params.get('correction_a', 1.0)
+                correction_b = dev_params.get('correction_b', 0.0)
+
+                # Connect to device and apply parameters
+                with BU03Device() as device:
+                    device.set_device_params(
+                        antenna_delay=antenna_delay,
+                        correction_a=correction_a,
+                        correction_b=correction_b
+                    )
+
+                print(f"✓ Applied calibration to device: antenna_delay={antenna_delay}, a={correction_a}, b={correction_b}")
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'ok'}).encode())
+
+            except Exception as e:
+                print(f"Error applying device calibration: {e}")
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+
         else:
             self.send_response(404)
             self.end_headers()
@@ -402,6 +648,13 @@ if __name__ == "__main__":
         print(f"Warning: Could not initialize position solver: {e}")
         print("Continuing without 3D positioning...")
         position_solver = None
+
+    # Load calibration data
+    print("\n" + "="*50)
+    print("Loading Calibration Data")
+    print("="*50)
+    load_calibration()
+    print("✓ Calibration data loaded")
 
     uwb_thread = threading.Thread(target=read_uwb_data, args=(uwb_port,), daemon=True)
     uwb_thread.start()

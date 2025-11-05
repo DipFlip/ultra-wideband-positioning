@@ -127,6 +127,49 @@ class BU03Device:
         """Get accelerometer data"""
         return self.send("AT+GETSENSOR")
 
+    def get_device_params(self):
+        """
+        Get device parameters (AT+GETDEV)
+        Returns the device coefficient settings
+        """
+        response = self.send("AT+GETDEV")
+        print(f"Device parameters:\n{response}")
+        return response
+
+    def set_device_params(self, label_rate=5, antenna_delay=16336,
+                         kalman_enable=1, kalman_q=0.018, kalman_r=0.642,
+                         correction_a=1.0, correction_b=0.0,
+                         positioning_enable=0, positioning_dim=0, save=True):
+        """
+        Set device parameters (AT+SETDEV)
+
+        Args:
+            label_rate: Label capacity/refresh rate (default: 5)
+            antenna_delay: Antenna delay parameter for UWB timing (default: 16336)
+            kalman_enable: Enable Kalman filter 0/1 (default: 1)
+            kalman_q: Kalman filter Q parameter (default: 0.018)
+            kalman_r: Kalman filter R parameter (default: 0.642)
+            correction_a: Distance correction scale factor (default: 1.0)
+            correction_b: Distance correction offset (default: 0.0)
+            positioning_enable: Enable positioning 0/1 (default: 0)
+            positioning_dim: Positioning dimension setting (default: 0)
+            save: Automatically save config (triggers reboot)
+
+        Note: Distance correction formula: corrected = a * measured + b
+        """
+        cmd = f"AT+SETDEV={label_rate},{antenna_delay},{kalman_enable}," \
+              f"{kalman_q},{kalman_r},{correction_a:.4f},{correction_b:.2f}," \
+              f"{positioning_enable},{positioning_dim}"
+
+        response = self.send(cmd)
+        print(f"Set device params: {response}")
+
+        if save and "OK" in response:
+            print("\nSaving configuration (device will reboot)...")
+            self.send_with_reboot("AT+SAVE")
+
+        return response
+
     def restart(self):
         """Restart the device"""
         print("Restarting device...")
