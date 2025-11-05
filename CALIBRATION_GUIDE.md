@@ -4,6 +4,50 @@
 
 This guide explains how to calibrate distance measurements for the BU03 UWB positioning system. Proper calibration can improve ranging accuracy to sub-centimeter precision.
 
+## Calibration Scope: Per-Anchor, Not Per Tag-Anchor Pair
+
+**Important**: Calibration is performed **per-anchor**, not per tag-to-anchor combination.
+
+### Why Per-Anchor?
+
+Each anchor has unique hardware characteristics:
+- **UWB chip variations**: Manufacturing tolerances cause chip-to-chip differences
+- **Antenna delays**: Internal propagation delay varies (±50-200ns typical)
+- **PCB design**: Circuit board layout affects signal paths
+- **Component tolerances**: Crystals, capacitors, traces all contribute
+
+### What This Means for You:
+
+1. **Calibrate each anchor once**: Each of your 8 anchors (0-7) should be calibrated individually
+2. **Use any tag**: You can use the same tag to calibrate all anchors
+3. **Shared benefit**: Once an anchor is calibrated, all tags benefit from the correction
+4. **Independent corrections**: Anchor 0's calibration doesn't affect Anchor 1
+
+### Example Workflow:
+
+```
+Day 1: Calibrate Anchor 0
+  - Measure tag at 0.5m, 1.0m, 2.0m, 4.0m from Anchor 0
+  - Fit calibration: scale=1.015, offset=-12mm
+  - Anchor 0 now accurate for any tag
+
+Day 2: Calibrate Anchor 1
+  - Measure tag at same distances from Anchor 1
+  - Fit calibration: scale=0.992, offset=+23mm
+  - Anchor 1 now accurate for any tag
+
+...repeat for all anchors you use
+```
+
+### Tag vs Anchor Calibration:
+
+| Device | Needs Calibration? | Why? |
+|--------|-------------------|------|
+| **Anchors** | ✅ Yes, each one | Fixed position, unique hardware characteristics |
+| **Tags** | ❌ No | Mobile device, uses anchors' calibrated measurements |
+
+**Bottom line**: Calibrate all active anchors once, and all your tags will automatically benefit from improved accuracy.
+
 ## Calibration Theory
 
 ### Why Calibrate?

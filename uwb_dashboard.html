@@ -6,6 +6,7 @@
     <title>UWB 3D Positioning System</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -498,6 +499,9 @@
                     <div>Scale Factor: <strong id="calScale">--</strong></div>
                     <div>Offset: <strong id="calOffset">--</strong> mm</div>
                     <div>R² (fit quality): <strong id="calR2">--</strong></div>
+                </div>
+                <div style="margin-top: 12px; background: white; padding: 10px; border-radius: 5px;">
+                    <canvas id="calPlot" style="max-height: 250px;"></canvas>
                 </div>
             </div>
             <div class="control-item" style="margin-top: 10px;">
@@ -1023,6 +1027,7 @@
 
         // ===== Calibration Controls =====
         let calibrationData = {};
+        let calibrationChart = null;
 
         function setupCalibrationControls() {
             const anchorSelect = document.getElementById('calAnchor');
@@ -1067,7 +1072,7 @@
                         console.log('Measurement added:', data);
                         await fetchCalibrationStatus();
                         updateMeasurementsList();
-                        alert(`Measurement added! Total: ${data.total_measurements}`);
+                        // No popup on success - just update UI
                     } else {
                         alert('Error: ' + data.message);
                     }
@@ -1100,6 +1105,10 @@
                         document.getElementById('calR2').textContent = data.r_squared.toFixed(4);
 
                         await fetchCalibrationStatus();
+
+                        // Draw calibration plot
+                        drawCalibrationPlot(anchorId, data.scale_factor, data.offset_mm);
+
                         alert(`Calibration fitted!\nScale: ${data.scale_factor.toFixed(4)}\nOffset: ${data.offset_mm.toFixed(2)}mm\nR²: ${data.r_squared.toFixed(4)}`);
                     } else {
                         alert('Error: ' + data.message);
@@ -1229,6 +1238,108 @@
                 document.getElementById('calOffset').textContent = cal.offset_mm.toFixed(2);
                 document.getElementById('calR2').textContent = '--';
             }
+        }
+
+        function drawCalibrationPlot(anchorId, scaleFactor, offsetMm) {
+            const measurements = calibrationData?.per_anchor?.[anchorId]?.measurements || [];
+
+            if (measurements.length === 0) return;
+
+            // Destroy existing chart
+            if (calibrationChart) {
+                calibrationChart.destroy();
+            }
+
+            // Prepare data points
+            const measuredDistances = measurements.map(m => m.measured_distance_m);
+            const trueDistances = measurements.map(m => m.true_distance_m);
+
+            // Generate fit line
+            const minMeas = Math.min(...measuredDistances);
+            const maxMeas = Math.max(...measuredDistances);
+            const fitLine = [
+                { x: minMeas, y: scaleFactor * minMeas + offsetMm / 1000.0 },
+                { x: maxMeas, y: scaleFactor * maxMeas + offsetMm / 1000.0 }
+            ];
+
+            // Perfect calibration line (y=x)
+            const perfectLine = [
+                { x: minMeas, y: minMeas },
+                { x: maxMeas, y: maxMeas }
+            ];
+
+            const ctx = document.getElementById('calPlot').getContext('2d');
+            calibrationChart = new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: [
+                        {
+                            label: 'Measurements',
+                            data: measurements.map(m => ({ x: m.measured_distance_m, y: m.true_distance_m })),
+                            backgroundColor: '#667eea',
+                            borderColor: '#667eea',
+                            pointRadius: 6,
+                            pointHoverRadius: 8
+                        },
+                        {
+                            label: 'Fitted Line',
+                            data: fitLine,
+                            type: 'line',
+                            borderColor: '#4CAF50',
+                            backgroundColor: 'transparent',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            tension: 0
+                        },
+                        {
+                            label: 'Perfect (y=x)',
+                            data: perfectLine,
+                            type: 'line',
+                            borderColor: '#999',
+                            backgroundColor: 'transparent',
+                            borderWidth: 1,
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            tension: 0
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `Anchor ${anchorId} Calibration`,
+                            font: { size: 14, weight: 'bold' }
+                        },
+                        legend: {
+                            display: true,
+                            position: 'bottom'
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Measured Distance (m)'
+                            },
+                            ticks: {
+                                callback: function(value) { return value.toFixed(2); }
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'True Distance (m)'
+                            },
+                            ticks: {
+                                callback: function(value) { return value.toFixed(2); }
+                            }
+                        }
+                    }
+                }
+            });
         }
 
         // ===== Initialize Everything =====

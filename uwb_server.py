@@ -275,27 +275,48 @@ def read_imu_data(ser):
         time.sleep(0.5)
 
 def read_uwb_data(port='/dev/ttyACM0'):
-    """Read UWB data"""
+    """Read UWB data with auto-reconnect on disconnection"""
     global latest_data
 
     print(f"Starting UWB data reader on {port}")
 
-    try:
-        ser = serial.Serial(port, 115200, timeout=0.1)
-        time.sleep(0.5)
-    except serial.SerialException as e:
-        print(f"\nError: Could not open {port}: {e}")
+    ser = None
+    buffer = b''
+    packet_count = 0
+    detected_anchors = set()
+    reconnect_delay = 2.0  # seconds
+
+    def connect_serial():
+        """Attempt to connect to serial port"""
+        try:
+            s = serial.Serial(port, 115200, timeout=0.1)
+            time.sleep(0.5)
+            print(f"✓ Connected to {port}")
+            return s
+        except serial.SerialException as e:
+            print(f"Could not open {port}: {e}")
+            return None
+
+    # Initial connection
+    ser = connect_serial()
+    if ser is None:
         print("\nPlease specify the correct port. Example:")
         print(f"  python3 uwb_server.py /dev/ttyACM1 8080")
         import sys
         sys.exit(1)
 
-    buffer = b''
-    packet_count = 0
-    detected_anchors = set()
-
     while True:
         try:
+            # Check if port is still open
+            if ser is None or not ser.is_open:
+                print(f"Serial port disconnected. Attempting to reconnect...")
+                time.sleep(reconnect_delay)
+                ser = connect_serial()
+                if ser is None:
+                    time.sleep(reconnect_delay)
+                    continue
+                buffer = b''  # Clear buffer on reconnect
+
             if ser.in_waiting > 0:
                 chunk = ser.read(ser.in_waiting)
                 buffer += chunk
@@ -363,6 +384,14 @@ def read_uwb_data(port='/dev/ttyACM0'):
                     buffer = buffer[-2000:]
 
             time.sleep(0.01)
+
+        except serial.SerialException as e:
+            print(f"Serial error: {e}")
+            if ser:
+                ser.close()
+            ser = None
+            print(f"Will attempt reconnect in {reconnect_delay}s...")
+            time.sleep(reconnect_delay)
 
         except Exception as e:
             print(f"Error reading UWB data: {e}")
