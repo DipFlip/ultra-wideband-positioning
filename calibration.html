@@ -491,27 +491,40 @@
                     const data = await response.json();
 
                     if (data.status === 'ok') {
-                        // Parse the response: +GETDEV:X1,X2,X3,X4,X5,X6,X7,X8,X9
-                        const match = data.response.match(/\+GETDEV:([0-9.,]+)/);
-                        if (match) {
-                            const params = match[1].split(',');
-                            if (params.length >= 9) {
-                                document.getElementById('paramLabelRate').value = params[0];
-                                document.getElementById('paramAntennaDelay').value = params[1];
-                                document.getElementById('paramKalmanEnable').value = params[2];
-                                document.getElementById('paramKalmanQ').value = params[3];
-                                document.getElementById('paramKalmanR').value = params[4];
-                                document.getElementById('paramCorrectionA').value = parseFloat(params[5]).toFixed(4);
-                                document.getElementById('paramCorrectionB').value = parseFloat(params[6]).toFixed(2);
-                                document.getElementById('paramPosEnable').value = params[7];
-                                document.getElementById('paramPosDim').value = params[8];
+                        // Parse the response: cap:5 anndelay:16336, kalman_enable:1, kalman_Q:0.018, kalman_R:0.642, para_a:1.0000, para_b:0.00, pos_enable:0, pos_dimen:0
+                        const response = data.response;
 
-                                alert('Device parameters loaded into fields!\n\nYou can now edit and write back to device.');
-                            } else {
-                                alert('Unexpected parameter format:\n' + data.response);
-                            }
+                        // Extract values using regex for each parameter
+                        const extractValue = (param) => {
+                            const regex = new RegExp(param + ':([-0-9.]+)');
+                            const match = response.match(regex);
+                            return match ? match[1] : null;
+                        };
+
+                        const cap = extractValue('cap');
+                        const anndelay = extractValue('anndelay');
+                        const kalman_enable = extractValue('kalman_enable');
+                        const kalman_Q = extractValue('kalman_Q');
+                        const kalman_R = extractValue('kalman_R');
+                        const para_a = extractValue('para_a');
+                        const para_b = extractValue('para_b');
+                        const pos_enable = extractValue('pos_enable');
+                        const pos_dimen = extractValue('pos_dimen');
+
+                        if (cap && anndelay && kalman_enable && kalman_Q && kalman_R && para_a && para_b !== null && pos_enable !== null && pos_dimen !== null) {
+                            document.getElementById('paramLabelRate').value = cap;
+                            document.getElementById('paramAntennaDelay').value = anndelay;
+                            document.getElementById('paramKalmanEnable').value = kalman_enable;
+                            document.getElementById('paramKalmanQ').value = kalman_Q;
+                            document.getElementById('paramKalmanR').value = kalman_R;
+                            document.getElementById('paramCorrectionA').value = parseFloat(para_a).toFixed(4);
+                            document.getElementById('paramCorrectionB').value = parseFloat(para_b).toFixed(2);
+                            document.getElementById('paramPosEnable').value = pos_enable;
+                            document.getElementById('paramPosDim').value = pos_dimen;
+
+                            alert('Device parameters loaded into fields!\n\nYou can now edit and write back to device.');
                         } else {
-                            alert('Could not parse device response:\n' + data.response);
+                            alert('Could not parse all parameters from device response:\n' + response);
                         }
                     } else {
                         alert('Error reading device parameters: ' + data.message);
