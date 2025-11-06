@@ -385,17 +385,22 @@ def read_uwb_data(port='/dev/ttyACM0'):
 
             time.sleep(0.01)
 
-        except serial.SerialException as e:
-            print(f"Serial error: {e}")
+        except (serial.SerialException, OSError) as e:
+            # Handle both serial exceptions and I/O errors (e.g., errno 5 when cable unplugged)
+            print(f"Serial/IO error: {e}")
             if ser:
-                ser.close()
+                try:
+                    ser.close()
+                except:
+                    pass
             ser = None
+            buffer = b''  # Clear buffer on reconnect
             print(f"Will attempt reconnect in {reconnect_delay}s...")
             time.sleep(reconnect_delay)
 
         except Exception as e:
             print(f"Error reading UWB data: {e}")
-            time.sleep(1)
+            time.sleep(0.1)
 
 class UWBRequestHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
