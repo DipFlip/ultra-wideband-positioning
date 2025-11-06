@@ -2,6 +2,8 @@
 
 Python utility for configuring and working with BU03/BU04 UWB (Ultra-Wideband) positioning modules.
 
+![3D UWB Tracking Demo](uwb_tracking.gif)
+
 ## Quick Start
 
 ```bash
