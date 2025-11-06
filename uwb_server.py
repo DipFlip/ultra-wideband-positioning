@@ -712,6 +712,69 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
 
+        elif self.path == '/calibration/write_device':
+            try:
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                params = json.loads(post_data.decode('utf-8'))
+
+                from bu03_util import BU03Device
+
+                # Extract all 9 parameters from request
+                label_rate = params.get('label_rate', 5)
+                antenna_delay = params.get('antenna_delay', 16336)
+                kalman_enable = params.get('kalman_enable', 1)
+                kalman_q = params.get('kalman_q', 0.018)
+                kalman_r = params.get('kalman_r', 0.642)
+                correction_a = params.get('correction_a', 1.0)
+                correction_b = params.get('correction_b', 0.0)
+                positioning_enable = params.get('positioning_enable', 0)
+                positioning_dim = params.get('positioning_dim', 0)
+
+                print(f"Writing device parameters:")
+                print(f"  X1 (Label Rate): {label_rate}")
+                print(f"  X2 (Antenna Delay): {antenna_delay}")
+                print(f"  X3 (Kalman Enable): {kalman_enable}")
+                print(f"  X4 (Kalman Q): {kalman_q}")
+                print(f"  X5 (Kalman R): {kalman_r}")
+                print(f"  X6 (Correction A): {correction_a}")
+                print(f"  X7 (Correction B): {correction_b} mm")
+                print(f"  X8 (Positioning Enable): {positioning_enable}")
+                print(f"  X9 (Positioning Dim): {positioning_dim}")
+
+                # Connect to device and write all parameters
+                with BU03Device() as device:
+                    device.set_device_params(
+                        label_rate=label_rate,
+                        antenna_delay=antenna_delay,
+                        kalman_enable=kalman_enable,
+                        kalman_q=kalman_q,
+                        kalman_r=kalman_r,
+                        correction_a=correction_a,
+                        correction_b=correction_b,
+                        positioning_enable=positioning_enable,
+                        positioning_dim=positioning_dim
+                    )
+
+                print(f"✓ Parameters written to device (saved and rebooting)")
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    'status': 'ok',
+                    'params': params
+                }).encode())
+
+            except Exception as e:
+                print(f"Error writing device parameters: {e}")
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+
         else:
             self.send_response(404)
             self.end_headers()

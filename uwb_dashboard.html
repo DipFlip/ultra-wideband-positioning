@@ -511,22 +511,67 @@
                 </div>
             </div>
             <div class="control-item" style="margin-top: 10px;">
-                <div style="display: flex; gap: 10px;">
-                    <button id="calRead" style="flex: 1; padding: 12px; border: none; border-radius: 5px; background: #2196F3; color: white; font-weight: bold; cursor: pointer; font-size: 0.95em;">
-                        📖 Read Params
+                <button id="calStageFit" style="width: 100%; padding: 10px; border: none; border-radius: 5px; background: #4CAF50; color: white; font-weight: bold; cursor: pointer;">
+                    ⬇️ Stage Fit Results
+                </button>
+                <div class="control-hint">Load fit results into parameters below (fills defaults for empty fields)</div>
+            </div>
+
+            <div class="control-item" style="margin-top: 10px; background: #f5f5f5; padding: 12px; border-radius: 5px;">
+                <div style="font-weight: bold; color: #333; margin-bottom: 10px;">Device Parameters (AT+SETDEV):</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.9em;">
+                    <div>
+                        <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 2px;">X1: Label Rate</label>
+                        <input type="number" id="paramLabelRate" placeholder="5" step="1" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 2px;">X2: Antenna Delay</label>
+                        <input type="number" id="paramAntennaDelay" placeholder="16336" step="1" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 2px;">X3: Kalman Enable</label>
+                        <input type="number" id="paramKalmanEnable" placeholder="1" min="0" max="1" step="1" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 2px;">X4: Kalman Q</label>
+                        <input type="number" id="paramKalmanQ" placeholder="0.018" step="0.001" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 2px;">X5: Kalman R</label>
+                        <input type="number" id="paramKalmanR" placeholder="0.642" step="0.001" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 2px;">X6: Correction A</label>
+                        <input type="number" id="paramCorrectionA" placeholder="1.0" step="0.0001" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 2px;">X7: Correction B (mm)</label>
+                        <input type="number" id="paramCorrectionB" placeholder="0.0" step="0.01" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 2px;">X8: Positioning Enable</label>
+                        <input type="number" id="paramPosEnable" placeholder="0" min="0" max="1" step="1" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 2px;">X9: Positioning Dim</label>
+                        <input type="number" id="paramPosDim" placeholder="0" step="1" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px;">
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-item" style="margin-top: 10px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <button id="calRead" style="padding: 10px; border: none; border-radius: 5px; background: #2196F3; color: white; font-weight: bold; cursor: pointer;">
+                        📖 Read from Device
                     </button>
-                    <button id="calReset" style="flex: 1; padding: 12px; border: none; border-radius: 5px; background: #9E9E9E; color: white; font-weight: bold; cursor: pointer; font-size: 0.95em;">
+                    <button id="calReset" style="padding: 10px; border: none; border-radius: 5px; background: #9E9E9E; color: white; font-weight: bold; cursor: pointer;">
                         🔄 Reset to Raw
                     </button>
-                    <button id="calApply" style="flex: 1; padding: 12px; border: none; border-radius: 5px; background: #FF9800; color: white; font-weight: bold; cursor: pointer; font-size: 0.95em;">
-                        📝 Apply Calibration
-                    </button>
                 </div>
-                <div class="control-hint">Read: View current | Reset: a=1.0, b=0.0 for raw data | Apply: Program calibration (TTL port required)</div>
-            </div>
-            <div class="control-item" id="calDeviceParams" style="display: none; background: #e3f2fd; padding: 12px; border-radius: 5px; margin-top: 10px;">
-                <div style="font-weight: bold; color: #1976d2; margin-bottom: 8px;">Current Device Parameters:</div>
-                <div id="calDeviceParamsText" style="font-size: 0.85em; font-family: monospace; white-space: pre-wrap; color: #333;"></div>
+                <button id="calWrite" style="width: 100%; margin-top: 10px; padding: 12px; border: none; border-radius: 5px; background: #FF9800; color: white; font-weight: bold; cursor: pointer; font-size: 1.05em;">
+                    📝 Write to Device & Save
+                </button>
+                <div class="control-hint">Read: Load current params | Reset: Set a=1.0, b=0.0 | Write: Send all params to device (TTL port required)</div>
             </div>
         </div>
     </div>
@@ -1052,7 +1097,6 @@
             const addBtn = document.getElementById('calAddMeasurement');
             const fitBtn = document.getElementById('calFit');
             const clearBtn = document.getElementById('calClear');
-            const applyBtn = document.getElementById('calApply');
             const plotAllBtn = document.getElementById('calPlotAll');
             const trueDist = document.getElementById('calTrueDist');
 
@@ -1170,30 +1214,44 @@
                 }
             });
 
-            // Apply to device
-            applyBtn.addEventListener('click', async () => {
-                if (!confirm('Apply average calibration to device via AT+SETDEV?\n\nThis will:\n- Average calibration from all fitted anchors\n- Program to tag device\n- Cause device to reboot\n\nRequires TTL port. Continue?')) {
+            // Stage fit results into parameter fields
+            const stageFitBtn = document.getElementById('calStageFit');
+            stageFitBtn.addEventListener('click', () => {
+                // Get fit results from the UI
+                const scaleText = document.getElementById('calScale').textContent;
+                const offsetText = document.getElementById('calOffset').textContent;
+
+                if (scaleText === '--' || offsetText === '--') {
+                    alert('Please fit calibration first before staging results');
                     return;
                 }
 
-                try {
-                    const response = await fetch('/calibration/apply_device', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({})
-                    });
+                const scale = parseFloat(scaleText);
+                const offset = parseFloat(offsetText);
 
-                    const data = await response.json();
+                // Fill correction_a and correction_b
+                document.getElementById('paramCorrectionA').value = scale.toFixed(4);
+                document.getElementById('paramCorrectionB').value = offset.toFixed(2);
 
-                    if (data.status === 'ok') {
-                        alert(`Calibration applied to device!\n\nAverage calibration:\nScale: ${data.scale_factor.toFixed(4)}\nOffset: ${data.offset_mm.toFixed(2)}mm\n\nUsed ${data.num_anchors_used} calibrated anchor(s)`);
-                    } else {
-                        alert('Error: ' + data.message);
+                // Fill defaults for any empty fields
+                const defaults = {
+                    'paramLabelRate': '5',
+                    'paramAntennaDelay': '16336',
+                    'paramKalmanEnable': '1',
+                    'paramKalmanQ': '0.018',
+                    'paramKalmanR': '0.642',
+                    'paramPosEnable': '0',
+                    'paramPosDim': '0'
+                };
+
+                for (const [id, defaultVal] of Object.entries(defaults)) {
+                    const field = document.getElementById(id);
+                    if (!field.value) {
+                        field.value = defaultVal;
                     }
-                } catch (error) {
-                    console.error('Error applying calibration:', error);
-                    alert('Failed to apply calibration: ' + error.message);
                 }
+
+                alert(`Fit results staged!\n\nCorrection A: ${scale.toFixed(4)}\nCorrection B: ${offset.toFixed(2)} mm\n\nEmpty fields filled with defaults. Review and click "Write to Device & Save".`);
             });
 
             // Plot all anchors
@@ -1214,9 +1272,28 @@
                     const data = await response.json();
 
                     if (data.status === 'ok') {
-                        // Display the raw response
-                        document.getElementById('calDeviceParams').style.display = 'block';
-                        document.getElementById('calDeviceParamsText').textContent = data.response;
+                        // Parse the response: +GETDEV:X1,X2,X3,X4,X5,X6,X7,X8,X9
+                        const match = data.response.match(/\+GETDEV:([0-9.,]+)/);
+                        if (match) {
+                            const params = match[1].split(',');
+                            if (params.length >= 9) {
+                                document.getElementById('paramLabelRate').value = params[0];
+                                document.getElementById('paramAntennaDelay').value = params[1];
+                                document.getElementById('paramKalmanEnable').value = params[2];
+                                document.getElementById('paramKalmanQ').value = params[3];
+                                document.getElementById('paramKalmanR').value = params[4];
+                                document.getElementById('paramCorrectionA').value = parseFloat(params[5]).toFixed(4);
+                                document.getElementById('paramCorrectionB').value = parseFloat(params[6]).toFixed(2);
+                                document.getElementById('paramPosEnable').value = params[7];
+                                document.getElementById('paramPosDim').value = params[8];
+
+                                alert('Device parameters loaded into fields!\n\nYou can now edit and write back to device.');
+                            } else {
+                                alert('Unexpected parameter format:\n' + data.response);
+                            }
+                        } else {
+                            alert('Could not parse device response:\n' + data.response);
+                        }
                     } else {
                         alert('Error reading device parameters: ' + data.message);
                     }
@@ -1226,30 +1303,83 @@
                 }
             });
 
-            // Reset device calibration
+            // Reset calibration to raw in parameter fields
             const resetBtn = document.getElementById('calReset');
-            resetBtn.addEventListener('click', async () => {
-                if (!confirm('Reset device calibration to a=1.0, b=0.0?\n\nThis will:\n- Remove all calibration from device\n- Return to raw distance measurements\n- Allow you to recalibrate from scratch\n\nRequires TTL port. Continue?')) {
+            resetBtn.addEventListener('click', () => {
+                // Set all fields to default values with calibration reset
+                document.getElementById('paramLabelRate').value = '5';
+                document.getElementById('paramAntennaDelay').value = '16336';
+                document.getElementById('paramKalmanEnable').value = '1';
+                document.getElementById('paramKalmanQ').value = '0.018';
+                document.getElementById('paramKalmanR').value = '0.642';
+                document.getElementById('paramCorrectionA').value = '1.0000';
+                document.getElementById('paramCorrectionB').value = '0.00';
+                document.getElementById('paramPosEnable').value = '0';
+                document.getElementById('paramPosDim').value = '0';
+
+                alert('Parameters reset to defaults with raw calibration (a=1.0, b=0.0).\n\nClick "Write to Device & Save" to apply.');
+            });
+
+            // Write all parameters to device
+            const writeBtn = document.getElementById('calWrite');
+            writeBtn.addEventListener('click', async () => {
+                // Read all parameter fields
+                const labelRate = document.getElementById('paramLabelRate').value || '5';
+                const antennaDelay = document.getElementById('paramAntennaDelay').value || '16336';
+                const kalmanEnable = document.getElementById('paramKalmanEnable').value || '1';
+                const kalmanQ = document.getElementById('paramKalmanQ').value || '0.018';
+                const kalmanR = document.getElementById('paramKalmanR').value || '0.642';
+                const correctionA = document.getElementById('paramCorrectionA').value || '1.0';
+                const correctionB = document.getElementById('paramCorrectionB').value || '0.0';
+                const posEnable = document.getElementById('paramPosEnable').value || '0';
+                const posDim = document.getElementById('paramPosDim').value || '0';
+
+                const params = {
+                    label_rate: parseInt(labelRate),
+                    antenna_delay: parseInt(antennaDelay),
+                    kalman_enable: parseInt(kalmanEnable),
+                    kalman_q: parseFloat(kalmanQ),
+                    kalman_r: parseFloat(kalmanR),
+                    correction_a: parseFloat(correctionA),
+                    correction_b: parseFloat(correctionB),
+                    positioning_enable: parseInt(posEnable),
+                    positioning_dim: parseInt(posDim)
+                };
+
+                // Confirm before writing
+                const confirmMsg = `Write these parameters to device?\n\n` +
+                    `X1 (Label Rate): ${params.label_rate}\n` +
+                    `X2 (Antenna Delay): ${params.antenna_delay}\n` +
+                    `X3 (Kalman Enable): ${params.kalman_enable}\n` +
+                    `X4 (Kalman Q): ${params.kalman_q}\n` +
+                    `X5 (Kalman R): ${params.kalman_r}\n` +
+                    `X6 (Correction A): ${params.correction_a}\n` +
+                    `X7 (Correction B): ${params.correction_b} mm\n` +
+                    `X8 (Pos Enable): ${params.positioning_enable}\n` +
+                    `X9 (Pos Dim): ${params.positioning_dim}\n\n` +
+                    `Device will save and reboot. Requires TTL port. Continue?`;
+
+                if (!confirm(confirmMsg)) {
                     return;
                 }
 
                 try {
-                    const response = await fetch('/calibration/reset_device', {
+                    const response = await fetch('/calibration/write_device', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({})
+                        body: JSON.stringify(params)
                     });
 
                     const data = await response.json();
 
                     if (data.status === 'ok') {
-                        alert('Device calibration reset to a=1.0, b=0.0\n\nYou are now seeing RAW distance measurements.\n\nYou can now collect fresh calibration data.');
+                        alert('Parameters written to device!\n\nDevice saved and will reboot.\n\nUSB port will auto-reconnect.');
                     } else {
-                        alert('Error resetting calibration: ' + data.message);
+                        alert('Error writing parameters: ' + data.message);
                     }
                 } catch (error) {
-                    console.error('Error resetting calibration:', error);
-                    alert('Failed to reset calibration: ' + error.message + '\n\nMake sure TTL port is connected.');
+                    console.error('Error writing parameters:', error);
+                    alert('Failed to write parameters: ' + error.message + '\n\nMake sure TTL port is connected.');
                 }
             });
         }
