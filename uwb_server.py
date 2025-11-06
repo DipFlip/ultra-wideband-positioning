@@ -297,13 +297,11 @@ def read_uwb_data(port='/dev/ttyACM0'):
             print(f"Could not open {port}: {e}")
             return None
 
-    # Initial connection
+    # Initial connection (optional - will retry in loop if fails)
     ser = connect_serial()
     if ser is None:
-        print("\nPlease specify the correct port. Example:")
-        print(f"  python3 uwb_server.py /dev/ttyACM1 8080")
-        import sys
-        sys.exit(1)
+        print(f"\n⚠️  Device not connected yet. Will keep trying to connect to {port}...")
+        print("   Server is running - connect device anytime and it will auto-detect.\n")
 
     while True:
         try:
@@ -876,15 +874,13 @@ if __name__ == "__main__":
         for port_candidate in ['/dev/ttyACM0', '/dev/ttyACM1']:
             if os.path.exists(port_candidate):
                 uwb_port = port_candidate
-                print(f"Auto-detected device at {uwb_port}")
+                print(f"✓ Auto-detected device at {uwb_port}")
                 break
 
         if uwb_port is None:
-            print("Error: No UWB device found!")
-            print("\nSearched for: /dev/ttyACM0, /dev/ttyACM1")
-            print("\nPlease connect a device or specify the port manually:")
-            print("  python3 uwb_server.py /dev/ttyACM0 8080")
-            sys.exit(1)
+            print("⚠️  No UWB device detected yet (searched /dev/ttyACM0, /dev/ttyACM1)")
+            print("   Defaulting to /dev/ttyACM0 - will auto-connect when device is plugged in")
+            uwb_port = '/dev/ttyACM0'
 
     # Initialize position solver
     print("\n" + "="*50)
