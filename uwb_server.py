@@ -651,8 +651,8 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
                         kalman_enable=1,        # Enable Kalman filter
                         kalman_q=0.018,         # Default process noise
                         kalman_r=0.642,         # Default measurement noise
-                        correction_a=avg_scale,
-                        correction_b=avg_offset / 1000.0,  # Convert mm to m
+                        correction_a=avg_scale, # Unitless scale factor
+                        correction_b=avg_offset, # Offset in millimeters (not meters!)
                         positioning_enable=0,   # Disable on-device positioning
                         positioning_dim=0
                     )

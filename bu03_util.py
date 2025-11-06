@@ -149,13 +149,13 @@ class BU03Device:
             kalman_enable: Enable Kalman filter 0/1 (default: 1)
             kalman_q: Kalman filter Q parameter (default: 0.018)
             kalman_r: Kalman filter R parameter (default: 0.642)
-            correction_a: Distance correction scale factor (default: 1.0)
-            correction_b: Distance correction offset (default: 0.0)
+            correction_a: Distance correction scale factor - unitless (default: 1.0)
+            correction_b: Distance correction offset in millimeters (default: 0.0)
             positioning_enable: Enable positioning 0/1 (default: 0)
             positioning_dim: Positioning dimension setting (default: 0)
             save: Automatically save config (triggers reboot)
 
-        Note: Distance correction formula: corrected = a * measured + b
+        Note: Distance correction formula: corrected = a * measured + b (where b is in mm)
         """
         cmd = f"AT+SETDEV={label_rate},{antenna_delay},{kalman_enable}," \
               f"{kalman_q},{kalman_r},{correction_a:.4f},{correction_b:.2f}," \
