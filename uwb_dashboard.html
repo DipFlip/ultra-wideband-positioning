@@ -322,6 +322,29 @@
             color: white;
         }
 
+        .calibration-button {
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.95);
+            border: none;
+            border-radius: 5px;
+            color: #667eea;
+            font-weight: bold;
+            font-size: 0.95em;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: all 0.3s;
+            z-index: 1000;
+        }
+
+        .calibration-button:hover {
+            background: white;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            transform: translateY(-2px);
+        }
+
         @media (max-width: 1200px) {
             .content-grid {
                 grid-template-columns: 1fr;
@@ -344,11 +367,20 @@
             .position-coords {
                 grid-template-columns: 1fr;
             }
+
+            .calibration-button {
+                top: 120px;
+                font-size: 0.85em;
+                padding: 8px 16px;
+            }
         }
     </style>
 </head>
 <body>
     <div id="connectionStatus" class="connection-status disconnected">Connecting...</div>
+    <button class="calibration-button" onclick="window.location.href='calibration.html'">
+        📏 Calibration
+    </button>
 
     <div class="container">
         <h1>🎯 UWB 3D Positioning System</h1>
@@ -438,14 +470,6 @@
             </div>
         </div>
 
-        <!-- Calibration Button -->
-        <div class="controls-panel" style="margin-top: 20px;">
-            <div class="controls-title">Distance Calibration</div>
-            <button onclick="window.location.href='calibration.html'" style="width: 100%; padding: 15px; border: none; border-radius: 8px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-weight: bold; font-size: 1.1em; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.3s;">
-                📏 Open Calibration Tool
-            </button>
-            <div class="control-hint" style="text-align: center; margin-top: 8px;">Calibrate distance measurements for optimal accuracy</div>
-        </div>
     </div>
 
     <script>
