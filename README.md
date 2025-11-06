@@ -1,23 +1,13 @@
-# BU03 UWB Development Board
+# Ultra-wideband Positioning tool for the BU03 Development Board
 
 Python utility for configuring and working with BU03/BU04 UWB (Ultra-Wideband) positioning modules.
 
 ![3D UWB Tracking Demo](uwb_tracking.gif)
 
+
 ## Quick Start
 
-```bash
-# Interactive mode
-python3 bu03_util.py
-
-# Command-line
-python3 bu03_util.py info                    # Show version and config
-python3 bu03_util.py set <id> <role> <ch> <rate>  # Configure device
-```
-
-## Web Dashboard (3D Visualization)
-
-Start the real-time 3D positioning dashboard:
+Start the web UI:
 
 ```bash
 # Auto-detect device port (tries /dev/ttyACM0, /dev/ttyACM1)
@@ -42,6 +32,18 @@ Then open your browser to `http://localhost:8080`
 - **Port:** `/dev/ttyUSB0`
 - **Baud:** 115200
 - **Format:** 8N1
+
+## Command line interface
+
+```bash
+# Interactive mode
+python3 bu03_util.py
+
+# Show version
+python3 bu03_util.py info
+# and configure the board
+python3 bu03_util.py set <id> <role> <ch> <rate>
+```
 
 ## Device Configuration
 
