@@ -384,7 +384,8 @@ def read_uwb_data(port='/dev/ttyACM0'):
                                 'success': False,
                                 'num_anchors': 0,
                                 'residual': None,
-                                'velocity': {'x': 0, 'y': 0, 'z': 0}
+                                'velocity': {'x': 0, 'y': 0, 'z': 0},
+                                'failure_reason': None
                             }
 
                             if position_solver:
@@ -392,6 +393,7 @@ def read_uwb_data(port='/dev/ttyACM0'):
                                 position_data['success'] = result['success']
                                 position_data['num_anchors'] = result['num_anchors']
                                 position_data['residual'] = result['residual']
+                                position_data['failure_reason'] = result.get('failure_reason')
 
                                 if result['success'] and result['position']:
                                     position_data['x'] = result['position'][0]

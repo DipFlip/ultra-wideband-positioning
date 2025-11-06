@@ -162,7 +162,7 @@ class PositionSolver:
         """
         Calculate 3D position using non-linear least squares
         measurements: dict of {anchor_id: distance}
-        Returns: (position, success, residual, num_anchors)
+        Returns: (position, success, residual, num_anchors, failure_reason)
         """
         # Filter valid measurements
         valid_measurements = {}
@@ -179,7 +179,8 @@ class PositionSolver:
 
         # Check minimum anchors
         if num_anchors < self.min_anchors:
-            return None, False, None, num_anchors
+            reason = f"Insufficient anchors: {num_anchors}/{self.min_anchors} (valid from {len(measurements)} total)"
+            return None, False, None, num_anchors, reason
 
         anchor_positions = np.array(anchor_positions)
         distances = np.array(distances)
@@ -202,7 +203,8 @@ class PositionSolver:
             )
 
             if not result.success:
-                return None, False, None, num_anchors
+                reason = f"Optimization failed to converge (used {result.nfev} function evaluations)"
+                return None, False, None, num_anchors, reason
 
             position = result.x
             residual = np.sqrt(np.mean(result.fun**2))  # RMS residual
@@ -212,7 +214,8 @@ class PositionSolver:
             if not (self.room_bounds['x'][0] - margin <= position[0] <= self.room_bounds['x'][1] + margin and
                     self.room_bounds['y'][0] - margin <= position[1] <= self.room_bounds['y'][1] + margin and
                     self.room_bounds['z'][0] - margin <= position[2] <= self.room_bounds['z'][1] + margin):
-                return None, False, residual, num_anchors
+                reason = f"Position out of bounds: [{position[0]:.2f}, {position[1]:.2f}, {position[2]:.2f}] (room: x:{self.room_bounds['x']}, y:{self.room_bounds['y']}, z:{self.room_bounds['z']})"
+                return None, False, residual, num_anchors, reason
 
             # Check if residual is acceptable
             if residual > self.max_residual:
@@ -223,13 +226,14 @@ class PositionSolver:
                     residuals = self.residual_function(position, anchor_positions, distances)
                     residual = np.sqrt(np.mean(residuals**2))
                 else:
-                    return None, False, residual, num_anchors
+                    reason = f"High residual error ({residual:.3f}m > {self.max_residual}m) and RANSAC failed to find better solution"
+                    return None, False, residual, num_anchors, reason
 
-            return position, True, residual, num_anchors
+            return position, True, residual, num_anchors, None
 
         except Exception as e:
-            print(f"Optimization error: {e}")
-            return None, False, None, num_anchors
+            reason = f"Optimization exception: {str(e)}"
+            return None, False, None, num_anchors, reason
 
     def ransac_position(self, anchor_positions, distances, iterations=10):
         """
@@ -286,7 +290,7 @@ class PositionSolver:
         measurements: dict of {anchor_id: distance}
         Returns: dict with position, velocity, confidence, etc.
         """
-        position, success, residual, num_anchors = self.calculate_position_lsq(measurements)
+        position, success, residual, num_anchors, failure_reason = self.calculate_position_lsq(measurements)
 
         result = {
             'success': success,
@@ -294,7 +298,8 @@ class PositionSolver:
             'position': None,
             'velocity': None,
             'residual': residual,
-            'filtered': False
+            'filtered': False,
+            'failure_reason': failure_reason
         }
 
         if not success or position is None:

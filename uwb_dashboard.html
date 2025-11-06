@@ -73,7 +73,7 @@
 
         .content-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 250px 1fr;
             gap: 20px;
             margin-bottom: 20px;
         }
@@ -95,7 +95,7 @@
 
         .anchor-container {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: 1fr;
             gap: 10px;
         }
 
@@ -345,13 +345,37 @@
             transform: translateY(-2px);
         }
 
+        .github-link {
+            position: fixed;
+            top: 120px;
+            right: 20px;
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.95);
+            border: none;
+            border-radius: 5px;
+            color: #667eea;
+            font-weight: bold;
+            font-size: 0.95em;
+            text-decoration: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: all 0.3s;
+            z-index: 1000;
+            display: inline-block;
+        }
+
+        .github-link:hover {
+            background: white;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            transform: translateY(-2px);
+        }
+
         @media (max-width: 1200px) {
             .content-grid {
                 grid-template-columns: 1fr;
             }
 
             .anchor-container {
-                grid-template-columns: repeat(4, 1fr);
+                grid-template-columns: 1fr;
             }
         }
 
@@ -361,7 +385,7 @@
             }
 
             .anchor-container {
-                grid-template-columns: repeat(2, 1fr);
+                grid-template-columns: 1fr;
             }
 
             .position-coords {
@@ -373,6 +397,12 @@
                 font-size: 0.85em;
                 padding: 8px 16px;
             }
+
+            .github-link {
+                top: 170px;
+                font-size: 0.85em;
+                padding: 8px 16px;
+            }
         }
     </style>
 </head>
@@ -381,16 +411,14 @@
     <button class="calibration-button" onclick="window.location.href='calibration.html'">
         📏 Calibration
     </button>
+    <a href="https://github.com/DipFlip/ultra-wideband-positioning" target="_blank" class="github-link">
+        🔗 GitHub
+    </a>
 
     <div class="container">
         <h1>🎯 UWB 3D Positioning System</h1>
-        <div class="subtitle" id="deviceType">Real-time 3D tracking - Waiting for data...</div>
 
         <div class="status">
-            <div class="status-item">
-                <div class="status-label">Active Anchors</div>
-                <div class="status-value" id="numAnchors">0</div>
-            </div>
             <div class="status-item">
                 <div class="status-label">Update Rate</div>
                 <div class="status-value" id="updateRate">0 Hz</div>
@@ -430,6 +458,7 @@
                             <div class="coord-value" id="posZ">--</div>
                         </div>
                     </div>
+                    <div id="positionFailureReason" style="display: none; margin-top: 10px; padding: 10px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 5px; color: #856404; font-size: 0.9em; text-align: center;"></div>
                 </div>
                 <div class="controls-panel">
                     <div class="controls-title">Kalman Filter Settings</div>
@@ -473,10 +502,11 @@
     </div>
 
     <script>
-        const MAX_DISTANCE = 10; // meters
+        const MAX_DISTANCE = 3; // meters
         let lastPacketCount = 0;
         let lastUpdateTime = Date.now();
         let currentAnchors = new Set();
+        let failureMessageTimer = null; // Timer for hiding failure messages
 
         function createAnchorElement(anchorId) {
             const div = document.createElement('div');
@@ -537,19 +567,11 @@
                     barElement.style.width = '0%';
                 }
             }
-
-            // Update connected count
-            document.getElementById('numAnchors').textContent = `${connectedCount}/8`;
         }
 
         function updateDashboard(data) {
             const now = Date.now();
             const elapsed = (now - lastUpdateTime) / 1000;
-
-            // Update device type
-            if (data.format) {
-                document.getElementById('deviceType').textContent = data.format;
-            }
 
             // Update anchors
             if (data.anchors) {
@@ -585,10 +607,15 @@
 
 
         function updatePosition(position) {
+            const failureReasonElement = document.getElementById('positionFailureReason');
+
             if (position.success && position.x !== null) {
                 document.getElementById('posX').textContent = position.x.toFixed(2);
                 document.getElementById('posY').textContent = position.y.toFixed(2);
                 document.getElementById('posZ').textContent = position.z.toFixed(2);
+
+                // DO NOT hide failure message on success - let the 5s timer run out
+                // This ensures failures are visible even if successes occur right after
 
                 // Update 3D visualization
                 // Map real coords to Three.js: X=X, Y=Z(up), Z=depth-Y(north inverted)
@@ -607,6 +634,26 @@
                 document.getElementById('posX').textContent = '--';
                 document.getElementById('posY').textContent = '--';
                 document.getElementById('posZ').textContent = '--';
+
+                // Clear any existing timer (new message replaces old one and resets 5s timer)
+                if (failureMessageTimer) {
+                    clearTimeout(failureMessageTimer);
+                }
+
+                // Show failure reason if available
+                if (position.failure_reason) {
+                    failureReasonElement.textContent = '⚠️ Position solver failed: ' + position.failure_reason;
+                    failureReasonElement.style.display = 'block';
+                } else {
+                    failureReasonElement.textContent = '⚠️ Position solver failed (no reason provided)';
+                    failureReasonElement.style.display = 'block';
+                }
+
+                // Set timer to hide message after 5 seconds
+                failureMessageTimer = setTimeout(() => {
+                    failureReasonElement.style.display = 'none';
+                    failureMessageTimer = null;
+                }, 5000);
             }
         }
 
@@ -631,10 +678,11 @@
         let anchorConfig = null;
 
         // Trail tracking
-        let trailPoints = [];
-        let trailLine = null;
+        let trailPoints = []; // Array of {position: Vector3, timestamp: number}
+        let trailLines = []; // Array of line segments with different opacities
         let trailEnabled = false;
-        const MAX_TRAIL_POINTS = 500; // Maximum number of points to keep in trail
+        const TRAIL_DURATION = 4000; // 4 seconds in milliseconds
+        const TRAIL_SEGMENTS = 20; // Number of segments for opacity gradient
 
         function init3DScene() {
             const container = document.getElementById('viewer3d');
@@ -817,47 +865,77 @@
         function addTrailPoint(x, y, z) {
             if (!trailEnabled) return;
 
-            // Add new point to trail
-            trailPoints.push(new THREE.Vector3(x, y, z));
+            const now = Date.now();
 
-            // Keep only the last MAX_TRAIL_POINTS points
-            if (trailPoints.length > MAX_TRAIL_POINTS) {
-                trailPoints.shift();
-            }
+            // Add new point to trail with timestamp
+            trailPoints.push({
+                position: new THREE.Vector3(x, y, z),
+                timestamp: now
+            });
+
+            // Remove points older than 10 seconds
+            const cutoffTime = now - TRAIL_DURATION;
+            trailPoints = trailPoints.filter(point => point.timestamp >= cutoffTime);
 
             updateTrailLine();
         }
 
         function updateTrailLine() {
-            // Remove old trail line if it exists
-            if (trailLine) {
-                scene.remove(trailLine);
-                trailLine.geometry.dispose();
-                trailLine.material.dispose();
-            }
+            // Remove old trail lines if they exist
+            trailLines.forEach(line => {
+                scene.remove(line);
+                line.geometry.dispose();
+                line.material.dispose();
+            });
+            trailLines = [];
 
-            // Create new trail line if we have at least 2 points
+            // Create new trail lines if we have at least 2 points
             if (trailPoints.length >= 2) {
-                const geometry = new THREE.BufferGeometry().setFromPoints(trailPoints);
-                const material = new THREE.LineBasicMaterial({
-                    color: 0xff6b35,
-                    linewidth: 2,
-                    opacity: 0.7,
-                    transparent: true
-                });
-                trailLine = new THREE.Line(geometry, material);
-                scene.add(trailLine);
+                const now = Date.now();
+
+                // Divide points into segments for opacity gradient
+                const pointsPerSegment = Math.max(1, Math.floor(trailPoints.length / TRAIL_SEGMENTS));
+
+                for (let segmentIndex = 0; segmentIndex < trailPoints.length - 1; segmentIndex++) {
+                    const point1 = trailPoints[segmentIndex];
+                    const point2 = trailPoints[segmentIndex + 1];
+
+                    // Calculate opacity based on the age of this segment
+                    const age = now - point1.timestamp;
+                    const normalizedAge = age / TRAIL_DURATION;
+                    const opacity = Math.max(0.1, 1 - normalizedAge); // Min opacity 0.1, max 1.0
+
+                    // Create a line segment
+                    const positions = [
+                        point1.position.x, point1.position.y, point1.position.z,
+                        point2.position.x, point2.position.y, point2.position.z
+                    ];
+
+                    const geometry = new THREE.BufferGeometry();
+                    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+                    const material = new THREE.LineBasicMaterial({
+                        color: 0xff6b35,
+                        linewidth: 2,
+                        transparent: true,
+                        opacity: opacity
+                    });
+
+                    const line = new THREE.Line(geometry, material);
+                    scene.add(line);
+                    trailLines.push(line);
+                }
             }
         }
 
         function clearTrail() {
             trailPoints = [];
-            if (trailLine) {
-                scene.remove(trailLine);
-                trailLine.geometry.dispose();
-                trailLine.material.dispose();
-                trailLine = null;
-            }
+            trailLines.forEach(line => {
+                scene.remove(line);
+                line.geometry.dispose();
+                line.material.dispose();
+            });
+            trailLines = [];
         }
 
         function animate() {
@@ -971,10 +1049,10 @@
                 toggleButton.style.background = trailEnabled ? '#4CAF50' : '#667eea';
 
                 // If disabling, hide the trail but keep the points
-                if (!trailEnabled && trailLine) {
-                    trailLine.visible = false;
-                } else if (trailEnabled && trailLine) {
-                    trailLine.visible = true;
+                if (!trailEnabled) {
+                    trailLines.forEach(line => line.visible = false);
+                } else {
+                    trailLines.forEach(line => line.visible = true);
                 }
             });
 
