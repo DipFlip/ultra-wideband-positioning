@@ -53,14 +53,16 @@ def load_calibration():
         with open('anchor_config.json', 'r') as f:
             config = json.load(f)
             calibration_config = config.get('calibration', {
-                'per_anchor': {},
-                'device_parameters': {}
+                'scale_factor': 1.0,
+                'offset_mm': 0.0,
+                'measurements': []
             })
     except Exception as e:
         print(f"Warning: Could not load calibration config: {e}")
         calibration_config = {
-            'per_anchor': {},
-            'device_parameters': {}
+            'scale_factor': 1.0,
+            'offset_mm': 0.0,
+            'measurements': []
         }
 
 def save_calibration():
@@ -80,29 +82,24 @@ def save_calibration():
         return False
 
 def apply_calibration(anchor_id, raw_distance):
-    """Apply per-anchor calibration correction"""
+    """Apply global calibration correction to all anchors"""
     if not calibration_config:
         return raw_distance
 
-    per_anchor = calibration_config.get('per_anchor', {})
-    anchor_cal = per_anchor.get(str(anchor_id), {})
-
-    scale = anchor_cal.get('scale_factor', 1.0)
-    offset = anchor_cal.get('offset_mm', 0.0)
+    scale = calibration_config.get('scale_factor', 1.0)
+    offset = calibration_config.get('offset_mm', 0.0)
 
     # Apply correction: corrected = scale * raw + offset_meters
     corrected = scale * raw_distance + (offset / 1000.0)
 
     return corrected
 
-def fit_calibration(anchor_id):
+def fit_calibration():
     """
-    Fit linear calibration model for an anchor using collected measurements
+    Fit linear calibration model using all collected measurements
     Returns (scale_factor, offset_mm, r_squared, error_message)
     """
-    per_anchor = calibration_config.get('per_anchor', {})
-    anchor_cal = per_anchor.get(str(anchor_id), {})
-    measurements = anchor_cal.get('measurements', [])
+    measurements = calibration_config.get('measurements', [])
 
     if len(measurements) < 2:
         return None, None, None, "Need at least 2 measurements"
@@ -201,9 +198,9 @@ def parse_uwb_packet(data):
     for anchor_id, pos in anchor_positions.items():
         if len(values) > pos and 100 < values[pos] < 10000:
             raw_distance = values[pos] / 1000.0
-            # Software calibration disabled - calibration applied at device level via AT+SETDEV
-            # calibrated_distance = apply_calibration(anchor_id, raw_distance)
-            anchors[anchor_id] = raw_distance
+            # Apply per-anchor software calibration (device onboard calibration not working as expected)
+            calibrated_distance = apply_calibration(anchor_id, raw_distance)
+            anchors[anchor_id] = calibrated_distance
 
     return anchors if anchors else None
 
@@ -518,22 +515,17 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
                     raise ValueError(f"No distance measurement available for anchor {anchor_id}")
 
                 # Ensure calibration structure exists
-                if 'per_anchor' not in calibration_config:
-                    calibration_config['per_anchor'] = {}
-                if anchor_id not in calibration_config['per_anchor']:
-                    calibration_config['per_anchor'][anchor_id] = {
-                        'scale_factor': 1.0,
-                        'offset_mm': 0.0,
-                        'measurements': []
-                    }
+                if 'measurements' not in calibration_config:
+                    calibration_config['measurements'] = []
 
                 # Add measurement
                 measurement = {
+                    'anchor_id': anchor_id,
                     'true_distance_m': true_distance,
                     'measured_distance_m': current_distance,
                     'timestamp': time.time()
                 }
-                calibration_config['per_anchor'][anchor_id]['measurements'].append(measurement)
+                calibration_config['measurements'].append(measurement)
 
                 # Save to config file
                 save_calibration()
@@ -545,7 +537,7 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({
                     'status': 'ok',
                     'measurement': measurement,
-                    'total_measurements': len(calibration_config['per_anchor'][anchor_id]['measurements'])
+                    'total_measurements': len(calibration_config['measurements'])
                 }).encode())
 
             except Exception as e:
@@ -558,22 +550,19 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
 
         elif self.path == '/calibration/fit':
             try:
-                data = json.loads(post_data.decode('utf-8'))
-                anchor_id = str(data['anchor_id'])
-
-                scale, offset_mm, r_squared, error = fit_calibration(anchor_id)
+                scale, offset_mm, r_squared, error = fit_calibration()
 
                 if error:
                     raise ValueError(error)
 
                 # Update calibration parameters
-                calibration_config['per_anchor'][anchor_id]['scale_factor'] = float(scale)
-                calibration_config['per_anchor'][anchor_id]['offset_mm'] = float(offset_mm)
+                calibration_config['scale_factor'] = float(scale)
+                calibration_config['offset_mm'] = float(offset_mm)
 
                 # Save to config
                 save_calibration()
 
-                print(f"✓ Fitted calibration for anchor {anchor_id}: scale={scale:.4f}, offset={offset_mm:.2f}mm, R²={r_squared:.4f}")
+                print(f"✓ Fitted global calibration: scale={scale:.4f}, offset={offset_mm:.2f}mm, R²={r_squared:.4f}")
 
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
@@ -596,16 +585,12 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
 
         elif self.path == '/calibration/clear':
             try:
-                data = json.loads(post_data.decode('utf-8'))
-                anchor_id = str(data['anchor_id'])
+                calibration_config['measurements'] = []
+                calibration_config['scale_factor'] = 1.0
+                calibration_config['offset_mm'] = 0.0
+                save_calibration()
 
-                if anchor_id in calibration_config.get('per_anchor', {}):
-                    calibration_config['per_anchor'][anchor_id]['measurements'] = []
-                    calibration_config['per_anchor'][anchor_id]['scale_factor'] = 1.0
-                    calibration_config['per_anchor'][anchor_id]['offset_mm'] = 0.0
-                    save_calibration()
-
-                print(f"✓ Cleared calibration for anchor {anchor_id}")
+                print(f"✓ Cleared global calibration")
 
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
@@ -624,15 +609,13 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
         elif self.path == '/calibration/delete_measurement':
             try:
                 data = json.loads(post_data.decode('utf-8'))
-                anchor_id = str(data['anchor_id'])
                 measurement_index = int(data['index'])
 
-                if anchor_id in calibration_config.get('per_anchor', {}):
-                    measurements = calibration_config['per_anchor'][anchor_id]['measurements']
-                    if 0 <= measurement_index < len(measurements):
-                        deleted = measurements.pop(measurement_index)
-                        save_calibration()
-                        print(f"✓ Deleted measurement {measurement_index} for anchor {anchor_id}")
+                measurements = calibration_config.get('measurements', [])
+                if 0 <= measurement_index < len(measurements):
+                    deleted = measurements.pop(measurement_index)
+                    save_calibration()
+                    print(f"✓ Deleted measurement {measurement_index}")
 
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
@@ -651,16 +634,14 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
         elif self.path == '/calibration/edit_measurement':
             try:
                 data = json.loads(post_data.decode('utf-8'))
-                anchor_id = str(data['anchor_id'])
                 measurement_index = int(data['index'])
                 new_true_distance = float(data['true_distance_m'])
 
-                if anchor_id in calibration_config.get('per_anchor', {}):
-                    measurements = calibration_config['per_anchor'][anchor_id]['measurements']
-                    if 0 <= measurement_index < len(measurements):
-                        measurements[measurement_index]['true_distance_m'] = new_true_distance
-                        save_calibration()
-                        print(f"✓ Updated measurement {measurement_index} for anchor {anchor_id} to {new_true_distance}m")
+                measurements = calibration_config.get('measurements', [])
+                if 0 <= measurement_index < len(measurements):
+                    measurements[measurement_index]['true_distance_m'] = new_true_distance
+                    save_calibration()
+                    print(f"✓ Updated measurement {measurement_index} to {new_true_distance}m")
 
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')

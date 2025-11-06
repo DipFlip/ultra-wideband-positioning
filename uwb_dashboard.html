@@ -996,15 +996,8 @@
         // Setup trail controls
         setupTrailControls();
 
-        // Setup calibration controls
-
         // Poll for data every 100ms
         setInterval(fetchData, 100);
-
-        // Update calibration display
-        setInterval(() => {
-            updateCurrentDistance();
-        }, 500);
 
         // Initial fetch
         fetchData();
