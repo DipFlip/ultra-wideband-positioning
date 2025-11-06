@@ -513,13 +513,16 @@
             <div class="control-item" style="margin-top: 10px;">
                 <div style="display: flex; gap: 10px;">
                     <button id="calRead" style="flex: 1; padding: 12px; border: none; border-radius: 5px; background: #2196F3; color: white; font-weight: bold; cursor: pointer; font-size: 0.95em;">
-                        📖 Read Device Params
+                        📖 Read Params
+                    </button>
+                    <button id="calReset" style="flex: 1; padding: 12px; border: none; border-radius: 5px; background: #9E9E9E; color: white; font-weight: bold; cursor: pointer; font-size: 0.95em;">
+                        🔄 Reset to Raw
                     </button>
                     <button id="calApply" style="flex: 1; padding: 12px; border: none; border-radius: 5px; background: #FF9800; color: white; font-weight: bold; cursor: pointer; font-size: 0.95em;">
-                        📝 Apply to Device
+                        📝 Apply Calibration
                     </button>
                 </div>
-                <div class="control-hint">Read: Get current AT+SETDEV values | Apply: Program averaged calibration (requires TTL port)</div>
+                <div class="control-hint">Read: View current | Reset: a=1.0, b=0.0 for raw data | Apply: Program calibration (TTL port required)</div>
             </div>
             <div class="control-item" id="calDeviceParams" style="display: none; background: #e3f2fd; padding: 12px; border-radius: 5px; margin-top: 10px;">
                 <div style="font-weight: bold; color: #1976d2; margin-bottom: 8px;">Current Device Parameters:</div>
@@ -1220,6 +1223,33 @@
                 } catch (error) {
                     console.error('Error reading device parameters:', error);
                     alert('Failed to read device parameters: ' + error.message + '\n\nMake sure TTL port is connected.');
+                }
+            });
+
+            // Reset device calibration
+            const resetBtn = document.getElementById('calReset');
+            resetBtn.addEventListener('click', async () => {
+                if (!confirm('Reset device calibration to a=1.0, b=0.0?\n\nThis will:\n- Remove all calibration from device\n- Return to raw distance measurements\n- Allow you to recalibrate from scratch\n\nRequires TTL port. Continue?')) {
+                    return;
+                }
+
+                try {
+                    const response = await fetch('/calibration/reset_device', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({})
+                    });
+
+                    const data = await response.json();
+
+                    if (data.status === 'ok') {
+                        alert('Device calibration reset to a=1.0, b=0.0\n\nYou are now seeing RAW distance measurements.\n\nYou can now collect fresh calibration data.');
+                    } else {
+                        alert('Error resetting calibration: ' + data.message);
+                    }
+                } catch (error) {
+                    console.error('Error resetting calibration:', error);
+                    alert('Failed to reset calibration: ' + error.message + '\n\nMake sure TTL port is connected.');
                 }
             });
         }

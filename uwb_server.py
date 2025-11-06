@@ -608,6 +608,40 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
 
+        elif self.path == '/calibration/reset_device':
+            try:
+                from bu03_util import BU03Device
+
+                # Reset to neutral calibration (raw measurements)
+                with BU03Device() as device:
+                    device.set_device_params(
+                        label_rate=5,
+                        antenna_delay=16336,
+                        kalman_enable=1,
+                        kalman_q=0.018,
+                        kalman_r=0.642,
+                        correction_a=1.0,    # No scale correction
+                        correction_b=0.0,    # No offset correction
+                        positioning_enable=0,
+                        positioning_dim=0
+                    )
+
+                print(f"✓ Reset device calibration to a=1.0, b=0.0 (raw measurements)")
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'ok'}).encode())
+
+            except Exception as e:
+                print(f"Error resetting device calibration: {e}")
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+
         elif self.path == '/calibration/apply_device':
             try:
                 from bu03_util import BU03Device
