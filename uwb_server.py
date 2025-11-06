@@ -11,13 +11,14 @@ import json
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import threading
 from position_solver import PositionSolver
+import numpy as np
 
 latest_data = {
     'timestamp': 0,
     'anchors': {},
     'packet_count': 0,
     'device_port': '',
-    'format': 'CmdM:4[ - Auto-detect anchors',
+    'format': 'Waiting for data...',
     'position': {
         'x': None,
         'y': None,
@@ -41,6 +42,87 @@ position_solver = None
 # Track last seen time for each anchor
 anchor_last_seen = {}
 ANCHOR_TIMEOUT = 2.0  # Seconds before considering anchor disconnected
+
+# Calibration data
+calibration_config = {}
+
+def load_calibration():
+    """Load calibration data from anchor_config.json"""
+    global calibration_config
+    try:
+        with open('anchor_config.json', 'r') as f:
+            config = json.load(f)
+            calibration_config = config.get('calibration', {
+                'scale_factor': 1.0,
+                'offset_mm': 0.0,
+                'measurements': []
+            })
+    except Exception as e:
+        print(f"Warning: Could not load calibration config: {e}")
+        calibration_config = {
+            'scale_factor': 1.0,
+            'offset_mm': 0.0,
+            'measurements': []
+        }
+
+def save_calibration():
+    """Save calibration data to anchor_config.json"""
+    try:
+        with open('anchor_config.json', 'r') as f:
+            config = json.load(f)
+
+        config['calibration'] = calibration_config
+
+        with open('anchor_config.json', 'w') as f:
+            json.dump(config, f, indent=2)
+
+        return True
+    except Exception as e:
+        print(f"Error saving calibration: {e}")
+        return False
+
+def apply_calibration(anchor_id, raw_distance):
+    """Apply global calibration correction to all anchors"""
+    if not calibration_config:
+        return raw_distance
+
+    scale = calibration_config.get('scale_factor', 1.0)
+    offset = calibration_config.get('offset_mm', 0.0)
+
+    # Apply correction: corrected = scale * raw + offset_meters
+    corrected = scale * raw_distance + (offset / 1000.0)
+
+    return corrected
+
+def fit_calibration():
+    """
+    Fit linear calibration model using all collected measurements
+    Returns (scale_factor, offset_mm, r_squared, error_message)
+    """
+    measurements = calibration_config.get('measurements', [])
+
+    if len(measurements) < 2:
+        return None, None, None, "Need at least 2 measurements"
+
+    # Extract true and measured distances
+    true_distances = np.array([m['true_distance_m'] for m in measurements])
+    measured_distances = np.array([m['measured_distance_m'] for m in measurements])
+
+    # Perform linear regression: true = scale * measured + offset
+    # Solve: [measured, 1] * [scale, offset] = true
+    A = np.column_stack([measured_distances, np.ones(len(measured_distances))])
+    params, residuals, rank, s = np.linalg.lstsq(A, true_distances, rcond=None)
+
+    scale_factor = params[0]
+    offset_m = params[1]
+    offset_mm = offset_m * 1000.0
+
+    # Calculate R-squared
+    ss_res = np.sum((true_distances - (scale_factor * measured_distances + offset_m)) ** 2)
+    ss_tot = np.sum((true_distances - np.mean(true_distances)) ** 2)
+    r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+
+    return scale_factor, offset_mm, r_squared, None
 
 def get_all_anchors_status(current_anchors):
     """
@@ -115,7 +197,10 @@ def parse_uwb_packet(data):
 
     for anchor_id, pos in anchor_positions.items():
         if len(values) > pos and 100 < values[pos] < 10000:
-            anchors[anchor_id] = values[pos] / 1000.0
+            raw_distance = values[pos] / 1000.0
+            # Apply per-anchor software calibration (device onboard calibration not working as expected)
+            calibrated_distance = apply_calibration(anchor_id, raw_distance)
+            anchors[anchor_id] = calibrated_distance
 
     return anchors if anchors else None
 
@@ -187,27 +272,83 @@ def read_imu_data(ser):
         time.sleep(0.5)
 
 def read_uwb_data(port='/dev/ttyACM0'):
-    """Read UWB data"""
+    """Read UWB data with auto-reconnect on disconnection"""
     global latest_data
 
     print(f"Starting UWB data reader on {port}")
 
-    try:
-        ser = serial.Serial(port, 115200, timeout=0.1)
-        time.sleep(0.5)
-    except serial.SerialException as e:
-        print(f"\nError: Could not open {port}: {e}")
-        print("\nPlease specify the correct port. Example:")
-        print(f"  python3 uwb_server.py /dev/ttyACM1 8080")
-        import sys
-        sys.exit(1)
-
+    ser = None
     buffer = b''
     packet_count = 0
     detected_anchors = set()
+    reconnect_delay = 2.0  # seconds
+    failed_attempts = 0
+    last_error_print = 0
+    was_connected = False
+
+    def connect_serial(silent=False):
+        """Attempt to connect to serial port"""
+        import os
+
+        # Check if port device file exists first
+        if not os.path.exists(port):
+            if not silent:
+                print(f"Port {port} does not exist")
+            return None
+
+        try:
+            s = serial.Serial(port, 115200, timeout=0.1)
+            time.sleep(0.5)
+            print(f"✓ Connected to {port}")
+            return s
+        except serial.SerialException as e:
+            if not silent:
+                print(f"Could not open {port}: {e}")
+            return None
+
+    # Initial connection (optional - will retry in loop if fails)
+    ser = connect_serial()
+    if ser is None:
+        print(f"\n⚠️  Device not connected yet. Will keep trying to connect to {port}...")
+        print("   Server is running - connect device anytime and it will auto-detect.\n")
+    else:
+        was_connected = True
 
     while True:
         try:
+            # Check if port is still open
+            if ser is None or not ser.is_open:
+                if was_connected:
+                    # Only print once when initially disconnected
+                    print(f"Serial port disconnected. Attempting to reconnect...")
+                    was_connected = False
+                    failed_attempts = 0
+
+                time.sleep(reconnect_delay)
+
+                # Try to reconnect silently (don't spam errors)
+                ser = connect_serial(silent=True)
+
+                if ser is None:
+                    failed_attempts += 1
+
+                    # Only print status occasionally (every 30 seconds at 2 second intervals = 15 attempts)
+                    if failed_attempts % 15 == 0:
+                        import os
+                        if os.path.exists(port):
+                            print(f"Still trying to connect to {port}... ({failed_attempts} attempts)")
+                        else:
+                            print(f"Waiting for {port} to appear... ({failed_attempts} attempts)")
+
+                    time.sleep(reconnect_delay)
+                    continue
+                else:
+                    # Successfully reconnected
+                    was_connected = True
+                    failed_attempts = 0
+
+                buffer = b''  # Clear buffer on reconnect
+
             if ser.in_waiting > 0:
                 chunk = ser.read(ser.in_waiting)
                 buffer += chunk
@@ -243,7 +384,8 @@ def read_uwb_data(port='/dev/ttyACM0'):
                                 'success': False,
                                 'num_anchors': 0,
                                 'residual': None,
-                                'velocity': {'x': 0, 'y': 0, 'z': 0}
+                                'velocity': {'x': 0, 'y': 0, 'z': 0},
+                                'failure_reason': None
                             }
 
                             if position_solver:
@@ -251,6 +393,7 @@ def read_uwb_data(port='/dev/ttyACM0'):
                                 position_data['success'] = result['success']
                                 position_data['num_anchors'] = result['num_anchors']
                                 position_data['residual'] = result['residual']
+                                position_data['failure_reason'] = result.get('failure_reason')
 
                                 if result['success'] and result['position']:
                                     position_data['x'] = result['position'][0]
@@ -267,7 +410,7 @@ def read_uwb_data(port='/dev/ttyACM0'):
                                 'anchors': all_anchors_status,
                                 'packet_count': packet_count,
                                 'device_port': port,
-                                'format': f'CmdM:4[ - {len(anchors)} Anchors',
+                                'format': f'{len(anchors)} Active Anchor{"s" if len(anchors) != 1 else ""}',
                                 'position': position_data
                             })
 
@@ -276,9 +419,22 @@ def read_uwb_data(port='/dev/ttyACM0'):
 
             time.sleep(0.01)
 
+        except (serial.SerialException, OSError) as e:
+            # Handle both serial exceptions and I/O errors (e.g., errno 5 when cable unplugged)
+            print(f"Serial/IO error: {e}")
+            if ser:
+                try:
+                    ser.close()
+                except:
+                    pass
+            ser = None
+            buffer = b''  # Clear buffer on reconnect
+            print(f"Will attempt reconnect in {reconnect_delay}s...")
+            time.sleep(reconnect_delay)
+
         except Exception as e:
             print(f"Error reading UWB data: {e}")
-            time.sleep(1)
+            time.sleep(0.1)
 
 class UWBRequestHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
@@ -300,6 +456,13 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
             except FileNotFoundError:
                 self.wfile.write(b'{}')
 
+        elif self.path == '/calibration/status':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(calibration_config).encode())
+
         elif self.path == '/' or self.path == '/index.html':
             self.send_response(200)
             self.send_header('Content-type', 'text/html')
@@ -310,10 +473,10 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
             super().do_GET()
 
     def do_POST(self):
-        if self.path == '/update_params':
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
 
+        if self.path == '/update_params':
             try:
                 params = json.loads(post_data.decode('utf-8'))
 
@@ -340,6 +503,378 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
                 self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
                 self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+
+        elif self.path == '/calibration/add_measurement':
+            try:
+                data = json.loads(post_data.decode('utf-8'))
+                anchor_id = str(data['anchor_id'])
+                true_distance = float(data['true_distance_m'])
+
+                # Get current measured distance from latest_data
+                current_distance = latest_data['anchors'].get(anchor_id, {}).get('distance')
+
+                if current_distance is None:
+                    raise ValueError(f"No distance measurement available for anchor {anchor_id}")
+
+                # Ensure calibration structure exists
+                if 'measurements' not in calibration_config:
+                    calibration_config['measurements'] = []
+
+                # Add measurement
+                measurement = {
+                    'anchor_id': anchor_id,
+                    'true_distance_m': true_distance,
+                    'measured_distance_m': current_distance,
+                    'timestamp': time.time()
+                }
+                calibration_config['measurements'].append(measurement)
+
+                # Save to config file
+                save_calibration()
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    'status': 'ok',
+                    'measurement': measurement,
+                    'total_measurements': len(calibration_config['measurements'])
+                }).encode())
+
+            except Exception as e:
+                print(f"Error adding calibration measurement: {e}")
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+
+        elif self.path == '/calibration/fit':
+            try:
+                scale, offset_mm, r_squared, error = fit_calibration()
+
+                if error:
+                    raise ValueError(error)
+
+                # Update calibration parameters
+                calibration_config['scale_factor'] = float(scale)
+                calibration_config['offset_mm'] = float(offset_mm)
+
+                # Save to config
+                save_calibration()
+
+                print(f"✓ Fitted global calibration: scale={scale:.4f}, offset={offset_mm:.2f}mm, R²={r_squared:.4f}")
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    'status': 'ok',
+                    'scale_factor': scale,
+                    'offset_mm': offset_mm,
+                    'r_squared': r_squared
+                }).encode())
+
+            except Exception as e:
+                print(f"Error fitting calibration: {e}")
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+
+        elif self.path == '/calibration/clear':
+            try:
+                calibration_config['measurements'] = []
+                calibration_config['scale_factor'] = 1.0
+                calibration_config['offset_mm'] = 0.0
+                save_calibration()
+
+                print(f"✓ Cleared global calibration")
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'ok'}).encode())
+
+            except Exception as e:
+                print(f"Error clearing calibration: {e}")
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+
+        elif self.path == '/calibration/delete_measurement':
+            try:
+                data = json.loads(post_data.decode('utf-8'))
+                measurement_index = int(data['index'])
+
+                measurements = calibration_config.get('measurements', [])
+                if 0 <= measurement_index < len(measurements):
+                    deleted = measurements.pop(measurement_index)
+                    save_calibration()
+                    print(f"✓ Deleted measurement {measurement_index}")
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'ok'}).encode())
+
+            except Exception as e:
+                print(f"Error deleting measurement: {e}")
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+
+        elif self.path == '/calibration/edit_measurement':
+            try:
+                data = json.loads(post_data.decode('utf-8'))
+                measurement_index = int(data['index'])
+                new_true_distance = float(data['true_distance_m'])
+
+                measurements = calibration_config.get('measurements', [])
+                if 0 <= measurement_index < len(measurements):
+                    measurements[measurement_index]['true_distance_m'] = new_true_distance
+                    save_calibration()
+                    print(f"✓ Updated measurement {measurement_index} to {new_true_distance}m")
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'ok'}).encode())
+
+            except Exception as e:
+                print(f"Error editing measurement: {e}")
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+
+        elif self.path == '/calibration/read_device':
+            try:
+                from bu03_util import BU03Device
+
+                # Read current device parameters
+                with BU03Device() as device:
+                    response = device.get_device_params()
+
+                # Parse the response if possible
+                # Response format unclear from docs, so just return raw
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    'status': 'ok',
+                    'response': response
+                }).encode())
+
+            except Exception as e:
+                error_msg = str(e)
+                print(f"Error reading device parameters: {e}")
+                print(f"Exception type: {type(e).__name__}")
+
+                # Provide more helpful error messages
+                if "No TTL port found" in error_msg or "Could not find serial device" in error_msg:
+                    error_msg = "TTL port not found. Please connect the serial cable and ensure the device is powered on."
+                elif "Permission denied" in error_msg:
+                    error_msg = "Permission denied accessing TTL port. Check port permissions."
+                elif "timed out" in error_msg.lower():
+                    error_msg = "Device not responding. Check TTL connection and power."
+
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'message': error_msg}).encode())
+
+        elif self.path == '/calibration/reset_device':
+            try:
+                from bu03_util import BU03Device
+
+                # Reset to neutral calibration (raw measurements)
+                with BU03Device() as device:
+                    device.set_device_params(
+                        label_rate=5,
+                        antenna_delay=16336,
+                        kalman_enable=1,
+                        kalman_q=0.018,
+                        kalman_r=0.642,
+                        correction_a=1.0,    # No scale correction
+                        correction_b=0.0,    # No offset correction
+                        positioning_enable=0,
+                        positioning_dim=0
+                    )
+
+                print(f"✓ Reset device calibration to a=1.0, b=0.0 (raw measurements)")
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'ok'}).encode())
+
+            except Exception as e:
+                print(f"Error resetting device calibration: {e}")
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+
+        elif self.path == '/calibration/apply_device':
+            try:
+                from bu03_util import BU03Device
+
+                # Calculate average calibration across all anchors with data
+                per_anchor = calibration_config.get('per_anchor', {})
+
+                # Collect all fitted calibrations
+                scale_factors = []
+                offsets = []
+
+                for anchor_id in range(8):
+                    anchor_cal = per_anchor.get(str(anchor_id), {})
+                    measurements = anchor_cal.get('measurements', [])
+
+                    if len(measurements) >= 2:  # Only use anchors with fitted calibration
+                        scale = anchor_cal.get('scale_factor', 1.0)
+                        offset = anchor_cal.get('offset_mm', 0.0)
+
+                        # Only include if calibrated (not default values)
+                        if scale != 1.0 or offset != 0.0:
+                            scale_factors.append(scale)
+                            offsets.append(offset)
+
+                # Use average if we have calibrated anchors, otherwise defaults
+                if scale_factors:
+                    avg_scale = sum(scale_factors) / len(scale_factors)
+                    avg_offset = sum(offsets) / len(offsets)
+                    print(f"Using average calibration: scale={avg_scale:.4f}, offset={avg_offset:.2f}mm")
+                    print(f"  (averaged across {len(scale_factors)} calibrated anchors)")
+                else:
+                    avg_scale = 1.0
+                    avg_offset = 0.0
+                    print("No calibrated anchors found, using defaults")
+
+                # Connect to device and apply parameters
+                with BU03Device() as device:
+                    device.set_device_params(
+                        label_rate=5,           # Default tag refresh rate
+                        antenna_delay=16336,    # Default antenna delay
+                        kalman_enable=1,        # Enable Kalman filter
+                        kalman_q=0.018,         # Default process noise
+                        kalman_r=0.642,         # Default measurement noise
+                        correction_a=avg_scale, # Unitless scale factor
+                        correction_b=avg_offset, # Offset in millimeters (not meters!)
+                        positioning_enable=0,   # Disable on-device positioning
+                        positioning_dim=0
+                    )
+
+                print(f"✓ Applied calibration to device: a={avg_scale:.4f}, b={avg_offset:.2f}mm")
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    'status': 'ok',
+                    'scale_factor': avg_scale,
+                    'offset_mm': avg_offset,
+                    'num_anchors_used': len(scale_factors)
+                }).encode())
+
+            except Exception as e:
+                print(f"Error applying device calibration: {e}")
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+
+        elif self.path == '/calibration/write_device':
+            try:
+                # post_data was already read at the top of do_POST()
+                if not post_data:
+                    raise ValueError("No data received")
+
+                params = json.loads(post_data.decode('utf-8'))
+
+                from bu03_util import BU03Device
+
+                # Extract all 9 parameters from request
+                label_rate = params.get('label_rate', 5)
+                antenna_delay = params.get('antenna_delay', 16336)
+                kalman_enable = params.get('kalman_enable', 1)
+                kalman_q = params.get('kalman_q', 0.018)
+                kalman_r = params.get('kalman_r', 0.642)
+                correction_a = params.get('correction_a', 1.0)
+                correction_b = params.get('correction_b', 0.0)
+                positioning_enable = params.get('positioning_enable', 0)
+                positioning_dim = params.get('positioning_dim', 0)
+
+                # Connect to device and write all parameters
+                result = None
+                with BU03Device() as device:
+                    result = device.set_device_params(
+                        label_rate=label_rate,
+                        antenna_delay=antenna_delay,
+                        kalman_enable=kalman_enable,
+                        kalman_q=kalman_q,
+                        kalman_r=kalman_r,
+                        correction_a=correction_a,
+                        correction_b=correction_b,
+                        positioning_enable=positioning_enable,
+                        positioning_dim=positioning_dim
+                    )
+
+                print(f"✓ Parameters written to device")
+
+                # Send success response immediately (before device finishes rebooting)
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    'status': 'ok',
+                    'params': params,
+                    'response': result
+                }).encode())
+
+            except Exception as e:
+                error_msg = str(e)
+                print(f"Error writing device parameters: {e}")
+                print(f"Exception type: {type(e).__name__}")
+
+                # Provide more helpful error messages
+                if "No TTL port found" in error_msg or "Could not find serial device" in error_msg:
+                    error_msg = "TTL port not found. Please connect the serial cable and ensure the device is powered on."
+                elif "Permission denied" in error_msg:
+                    error_msg = "Permission denied accessing TTL port. Check port permissions."
+                elif "timed out" in error_msg.lower():
+                    error_msg = "Device not responding. Check TTL connection and power."
+                elif "Empty request body" in error_msg or "No data received" in error_msg:
+                    error_msg = "Request was aborted or incomplete. Please try again."
+
+                try:
+                    self.send_response(500)
+                    self.send_header('Content-type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({'status': 'error', 'message': error_msg}).encode())
+                except (BrokenPipeError, ConnectionResetError):
+                    # Client already disconnected (timeout) - just log it
+                    print(f"Client disconnected before response could be sent")
+
         else:
             self.send_response(404)
             self.end_headers()
@@ -381,15 +916,13 @@ if __name__ == "__main__":
         for port_candidate in ['/dev/ttyACM0', '/dev/ttyACM1']:
             if os.path.exists(port_candidate):
                 uwb_port = port_candidate
-                print(f"Auto-detected device at {uwb_port}")
+                print(f"✓ Auto-detected device at {uwb_port}")
                 break
 
         if uwb_port is None:
-            print("Error: No UWB device found!")
-            print("\nSearched for: /dev/ttyACM0, /dev/ttyACM1")
-            print("\nPlease connect a device or specify the port manually:")
-            print("  python3 uwb_server.py /dev/ttyACM0 8080")
-            sys.exit(1)
+            print("⚠️  No UWB device detected yet (searched /dev/ttyACM0, /dev/ttyACM1)")
+            print("   Defaulting to /dev/ttyACM0 - will auto-connect when device is plugged in")
+            uwb_port = '/dev/ttyACM0'
 
     # Initialize position solver
     print("\n" + "="*50)
@@ -402,6 +935,13 @@ if __name__ == "__main__":
         print(f"Warning: Could not initialize position solver: {e}")
         print("Continuing without 3D positioning...")
         position_solver = None
+
+    # Load calibration data
+    print("\n" + "="*50)
+    print("Loading Calibration Data")
+    print("="*50)
+    load_calibration()
+    print("✓ Calibration data loaded")
 
     uwb_thread = threading.Thread(target=read_uwb_data, args=(uwb_port,), daemon=True)
     uwb_thread.start()

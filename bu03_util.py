@@ -57,25 +57,24 @@ class BU03Device:
 
         return response.decode('utf-8', errors='replace').strip()
 
-    def send_with_reboot(self, cmd, reboot_wait=3):
+    def send_with_reboot(self, cmd, reboot_wait=3, wait_for_reconnect=True):
         """Send command that causes device to reboot (like AT+SAVE)"""
-        print(f"Sending: {cmd}")
         response = self.send(cmd)
-        print(f"Response: {response}")
 
         if "OK" in response:
-            print(f"Command successful. Device will reboot...")
-            print(f"Waiting {reboot_wait} seconds for reboot to complete...")
-            time.sleep(reboot_wait)
+            if wait_for_reconnect:
+                print(f"Device rebooting, waiting {reboot_wait}s...")
+                time.sleep(reboot_wait)
 
-            # Read and discard boot messages
-            if self.ser.in_waiting > 0:
-                boot_msg = self.ser.read(self.ser.in_waiting)
-                print(f"Boot messages received ({len(boot_msg)} bytes)")
+                # Read and discard boot messages
+                if self.ser.in_waiting > 0:
+                    self.ser.read(self.ser.in_waiting)
 
-            # Reconnect to ensure clean state
-            self.connect()
-            print("Reconnected to device")
+                # Reconnect to ensure clean state
+                self.connect()
+                print("Device reconnected")
+            else:
+                print("Device will reboot in background")
 
         return response
 
@@ -126,6 +125,50 @@ class BU03Device:
     def get_sensor(self):
         """Get accelerometer data"""
         return self.send("AT+GETSENSOR")
+
+    def get_device_params(self):
+        """
+        Get device parameters (AT+GETDEV)
+        Returns the device coefficient settings
+        """
+        response = self.send("AT+GETDEV")
+        print(f"Device parameters:\n{response}")
+        return response
+
+    def set_device_params(self, label_rate=5, antenna_delay=16336,
+                         kalman_enable=1, kalman_q=0.018, kalman_r=0.642,
+                         correction_a=1.0, correction_b=0.0,
+                         positioning_enable=0, positioning_dim=0, save=True):
+        """
+        Set device parameters (AT+SETDEV)
+
+        Args:
+            label_rate: Label capacity/refresh rate (default: 5)
+            antenna_delay: Antenna delay parameter for UWB timing (default: 16336)
+            kalman_enable: Enable Kalman filter 0/1 (default: 1)
+            kalman_q: Kalman filter Q parameter (default: 0.018)
+            kalman_r: Kalman filter R parameter (default: 0.642)
+            correction_a: Distance correction scale factor - unitless (default: 1.0)
+            correction_b: Distance correction offset in millimeters (default: 0.0)
+            positioning_enable: Enable positioning 0/1 (default: 0)
+            positioning_dim: Positioning dimension setting (default: 0)
+            save: Automatically save config (triggers reboot)
+
+        Note: Distance correction formula: corrected = a * measured + b (where b is in mm)
+        """
+        cmd = f"AT+SETDEV={label_rate},{antenna_delay},{kalman_enable}," \
+              f"{kalman_q},{kalman_r},{correction_a:.4f},{correction_b:.2f}," \
+              f"{positioning_enable},{positioning_dim}"
+
+        print(f"Writing device parameters (a={correction_a:.4f}, b={correction_b:.2f}mm)...")
+        response = self.send(cmd)
+
+        if save and "OK" in response:
+            print("Saving configuration...")
+            # Don't wait for reconnect - let device reboot in background
+            self.send_with_reboot("AT+SAVE", wait_for_reconnect=False)
+
+        return response
 
     def restart(self):
         """Restart the device"""

@@ -47,13 +47,20 @@ Configure at least one device as a **tag** (moving point) and at least one as a 
 
 **Important:** Tag and first base station must have the same ID. Additional base stations must have different IDs.
 
+### UWB Channel Specifications
+
+The BU03 UWB module operates on two configurable channels:
+- **Channel 5 (CH5)**: 6489.5 MHz center frequency
+- **Channel 9 (CH9)**: 7987.2 MHz center frequency
+- **Channel Bandwidth**: 499.2 MHz
+
 ### Configuration Parameters
 
 | Parameter | Values |
 |-----------|--------|
 | **ID** | 0-10 |
 | **Role** | 0 = Tag (moving), 1 = Base Station (anchor) |
-| **Channel** | 0 = Channel 9, 1 = Channel 5 |
+| **Channel** | 0 = Channel 9 (7987.2 MHz), 1 = Channel 5 (6489.5 MHz) |
 | **Rate** | 0 = 850K, 1 = 6.8M |
 
 ### Example: 1 Tag + 3 Base Stations

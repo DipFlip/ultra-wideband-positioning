@@ -64,5 +64,24 @@
       "initial_variance": 1.0,
       "_comment": "Process noise: how much to trust motion model (lower = smoother). Measurement noise: how much to trust new positions (higher = smoother but more lag). Current settings smooth over ~2-3 seconds."
     }
+  },
+  "calibration": {
+    "_comment": "Distance calibration data for UWB ranging. Per-anchor corrections applied in software, device_parameters sent to BU03 via AT+SETDEV",
+    "per_anchor": {
+      "0": {"scale_factor": 1.0, "offset_mm": 0.0, "measurements": []},
+      "1": {"scale_factor": 1.0, "offset_mm": 0.0, "measurements": []},
+      "2": {"scale_factor": 1.0, "offset_mm": 0.0, "measurements": []},
+      "3": {"scale_factor": 1.0, "offset_mm": 0.0, "measurements": []},
+      "4": {"scale_factor": 1.0, "offset_mm": 0.0, "measurements": []},
+      "5": {"scale_factor": 1.0, "offset_mm": 0.0, "measurements": []},
+      "6": {"scale_factor": 1.0, "offset_mm": 0.0, "measurements": []},
+      "7": {"scale_factor": 1.0, "offset_mm": 0.0, "measurements": []}
+    },
+    "device_parameters": {
+      "antenna_delay": 16336,
+      "correction_a": 1.0,
+      "correction_b": 0.0,
+      "_comment": "Parameters for AT+SETDEV command. antenna_delay compensates for chip propagation delay, correction_a/b apply linear correction: corrected = a * measured + b"
+    }
   }
 }
