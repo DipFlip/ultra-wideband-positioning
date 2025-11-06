@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UWB Distance Calibration</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: white;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .subtitle {
+            text-align: center;
+            color: rgba(255,255,255,0.9);
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+
+        .nav-button {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            padding: 12px 24px;
+            background: rgba(255, 255, 255, 0.95);
+            border: none;
+            border-radius: 8px;
+            color: #667eea;
+            font-weight: bold;
+            font-size: 1em;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+        }
+
+        .nav-button:hover {
+            background: white;
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+            transform: translateY(-2px);
+        }
+
+        .controls-panel {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .controls-title {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .control-item {
+            margin-bottom: 15px;
+        }
+
+        .control-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .control-value {
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        .control-hint {
+            font-size: 0.75em;
+            color: #999;
+            margin-top: 3px;
+            font-style: italic;
+        }
+
+        input[type="number"] {
+            width: 100%;
+            padding: 8px;
+            border: 2px solid #e0e0e0;
+            border-radius: 5px;
+            font-size: 0.9em;
+            background: white;
+            color: #333;
+        }
+
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        select {
+            width: 100%;
+            padding: 8px;
+            border: 2px solid #e0e0e0;
+            border-radius: 5px;
+            font-size: 0.9em;
+            background: white;
+            color: #333;
+        }
+
+        button {
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        button:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.8em;
+            }
+
+            .nav-button {
+                position: static;
+                width: 100%;
+                margin-bottom: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <button class="nav-button" onclick="window.location.href='uwb_dashboard.html'">← Back to Dashboard</button>
+
+    <div class="container">
+        <h1>📏 Distance Calibration</h1>
+        <div class="subtitle">Calibrate distance measurements for optimal accuracy</div>
+
+        <!-- Calibration Panel -->
+        <div class="controls-panel">
+            <div class="controls-title">Measurement Collection</div>
+            <div class="control-item">
+                <div class="control-label">
+                    <span>Select Anchor</span>
+                </div>
+                <select id="calAnchor" style="width: 100%; padding: 8px; border: 2px solid #e0e0e0; border-radius: 5px; font-size: 0.9em;">
+                    <option value="0">Anchor 0</option>
+                    <option value="1">Anchor 1</option>
+                    <option value="2">Anchor 2</option>
+                    <option value="3">Anchor 3</option>
+                    <option value="4">Anchor 4</option>
+                    <option value="5">Anchor 5</option>
+                    <option value="6">Anchor 6</option>
+                    <option value="7">Anchor 7</option>
+                </select>
+            </div>
+            <div class="control-item">
+                <div class="control-label">
+                    <span>Current Measured Distance</span>
+                    <span class="control-value" id="calCurrentDist">-- m</span>
+                </div>
+            </div>
+            <div class="control-item">
+                <div class="control-label">
+                    <span>True Distance (meters)</span>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <input type="number" id="calTrueDist" min="0.1" max="20" step="0.01" value="1.0" style="flex: 1; width: auto;">
+                    <button id="calAddMeasurement" style="padding: 8px 20px; border: none; border-radius: 5px; background: #4CAF50; color: white; font-weight: bold; cursor: pointer;">
+                        Add Measurement
+                    </button>
+                </div>
+                <div class="control-hint">Place tag/anchor at known distance, enter value, click Add</div>
+            </div>
+            <div class="control-item">
+                <div class="control-label">
+                    <span>Measurements</span>
+                    <span class="control-value" id="calMeasCount">0</span>
+                </div>
+                <div id="calMeasurements" style="max-height: 200px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 5px; padding: 5px; background: #f9f9f9;"></div>
+            </div>
+            <div class="control-item">
+                <div style="display: flex; gap: 10px;">
+                    <button id="calFit" style="flex: 1; padding: 10px; border: none; border-radius: 5px; background: #667eea; color: white; font-weight: bold; cursor: pointer;">
+                        Fit Calibration
+                    </button>
+                    <button id="calClear" style="flex: 1; padding: 10px; border: none; border-radius: 5px; background: #f44336; color: white; font-weight: bold; cursor: pointer;">
+                        Clear
+                    </button>
+                </div>
+            </div>
+            <div class="control-item">
+                <button id="calPlotAll" style="width: 100%; padding: 10px; border: none; border-radius: 5px; background: #9C27B0; color: white; font-weight: bold; cursor: pointer;">
+                    📊 Compare All Anchors
+                </button>
+                <div class="control-hint">Show overlay plot of all calibrated anchors</div>
+            </div>
+            <div class="control-item" id="calResults" style="display: none; background: #e8f5e9; padding: 12px; border-radius: 5px; margin-top: 10px;">
+                <div style="font-weight: bold; color: #2e7d32; margin-bottom: 8px;">Calibration Results:</div>
+                <div style="font-size: 0.9em;">
+                    <div>Scale Factor: <strong id="calScale">--</strong></div>
+                    <div>Offset: <strong id="calOffset">--</strong> mm</div>
+                    <div>R² (fit quality): <strong id="calR2">--</strong></div>
+                </div>
+                <div style="margin-top: 12px; background: white; padding: 10px; border-radius: 5px;">
+                    <canvas id="calPlot" style="max-height: 250px;"></canvas>
+                </div>
+            </div>
+            <div class="control-item" style="margin-top: 10px;">
+                <button id="calStageFit" style="width: 100%; padding: 10px; border: none; border-radius: 5px; background: #4CAF50; color: white; font-weight: bold; cursor: pointer;">
+                    ⬇️ Stage Fit Results
+                </button>
+                <div class="control-hint">Load fit results into parameters below (fills defaults for empty fields)</div>
+            </div>
+        </div>
+
+        <!-- Device Parameters Panel -->
+        <div class="controls-panel">
+            <div class="controls-title">Device Parameters (AT+SETDEV)</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.9em;">
+                <div>
+                    <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 2px;">X1: Label Rate</label>
+                    <input type="number" id="paramLabelRate" placeholder="5" step="1" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 2px;">X2: Antenna Delay</label>
+                    <input type="number" id="paramAntennaDelay" placeholder="16336" step="1" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 2px;">X3: Kalman Enable</label>
+                    <input type="number" id="paramKalmanEnable" placeholder="1" min="0" max="1" step="1" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 2px;">X4: Kalman Q</label>
+                    <input type="number" id="paramKalmanQ" placeholder="0.018" step="0.001" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 2px;">X5: Kalman R</label>
+                    <input type="number" id="paramKalmanR" placeholder="0.642" step="0.001" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 2px;">X6: Correction A</label>
+                    <input type="number" id="paramCorrectionA" placeholder="1.0" step="0.0001" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 2px;">X7: Correction B (mm)</label>
+                    <input type="number" id="paramCorrectionB" placeholder="0.0" step="0.01" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 2px;">X8: Positioning Enable</label>
+                    <input type="number" id="paramPosEnable" placeholder="0" min="0" max="1" step="1" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.85em; color: #666; margin-bottom: 2px;">X9: Positioning Dim</label>
+                    <input type="number" id="paramPosDim" placeholder="0" step="1" style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 3px;">
+                </div>
+            </div>
+
+            <div class="control-item" style="margin-top: 15px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <button id="calRead" style="padding: 10px; border: none; border-radius: 5px; background: #2196F3; color: white; font-weight: bold; cursor: pointer;">
+                        📖 Read from Device
+                    </button>
+                    <button id="calReset" style="padding: 10px; border: none; border-radius: 5px; background: #9E9E9E; color: white; font-weight: bold; cursor: pointer;">
+                        🔄 Reset to Raw
+                    </button>
+                </div>
+                <button id="calWrite" style="width: 100%; margin-top: 10px; padding: 12px; border: none; border-radius: 5px; background: #FF9800; color: white; font-weight: bold; cursor: pointer; font-size: 1.05em;">
+                    📝 Write to Device & Save
+                </button>
+                <div class="control-hint">Read: Load current params | Reset: Set a=1.0, b=0.0 | Write: Send all params to device (TTL port required)</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ===== Calibration Controls =====
+        let calibrationData = {};
+        let calibrationChart = null;
+        let currentData = {};
+
+        // Poll for current distance data
+        async function updateCurrentData() {
+            try {
+                const response = await fetch('/data');
+                currentData = await response.json();
+                updateCurrentDistance();
+            } catch (error) {
+                console.error('Error fetching current data:', error);
+            }
+        }
+
+        function setupCalibrationControls() {
+            const anchorSelect = document.getElementById('calAnchor');
+            const addBtn = document.getElementById('calAddMeasurement');
+            const fitBtn = document.getElementById('calFit');
+            const clearBtn = document.getElementById('calClear');
+            const plotAllBtn = document.getElementById('calPlotAll');
+            const trueDist = document.getElementById('calTrueDist');
+
+            // Load initial calibration status
+            fetchCalibrationStatus();
+
+            // Update current distance when anchor selection changes
+            anchorSelect.addEventListener('change', () => {
+                updateCurrentDistance();
+                updateMeasurementsList();
+            });
+
+            // Add measurement
+            addBtn.addEventListener('click', async () => {
+                const anchorId = anchorSelect.value;
+                const trueDistance = parseFloat(trueDist.value);
+
+                if (isNaN(trueDistance) || trueDistance <= 0) {
+                    alert('Please enter a valid true distance');
+                    return;
+                }
+
+                try {
+                    const response = await fetch('/calibration/add_measurement', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            anchor_id: anchorId,
+                            true_distance_m: trueDistance
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.status === 'ok') {
+                        console.log('Measurement added:', data);
+                        await fetchCalibrationStatus();
+                        updateMeasurementsList();
+                        // No popup on success - just update UI
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                } catch (error) {
+                    console.error('Error adding measurement:', error);
+                    alert('Failed to add measurement: ' + error.message);
+                }
+            });
+
+            // Fit calibration
+            fitBtn.addEventListener('click', async () => {
+                const anchorId = anchorSelect.value;
+
+                try {
+                    const response = await fetch('/calibration/fit', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ anchor_id: anchorId })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.status === 'ok') {
+                        console.log('Calibration fitted:', data);
+
+                        // Show results
+                        document.getElementById('calResults').style.display = 'block';
+                        document.getElementById('calScale').textContent = data.scale_factor.toFixed(4);
+                        document.getElementById('calOffset').textContent = data.offset_mm.toFixed(2);
+                        document.getElementById('calR2').textContent = data.r_squared.toFixed(4);
+
+                        await fetchCalibrationStatus();
+
+                        // Draw calibration plot
+                        drawCalibrationPlot(anchorId, data.scale_factor, data.offset_mm);
+
+                        alert(`Calibration fitted!\nScale: ${data.scale_factor.toFixed(4)}\nOffset: ${data.offset_mm.toFixed(2)}mm\nR²: ${data.r_squared.toFixed(4)}`);
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                } catch (error) {
+                    console.error('Error fitting calibration:', error);
+                    alert('Failed to fit calibration: ' + error.message);
+                }
+            });
+
+            // Clear calibration
+            clearBtn.addEventListener('click', async () => {
+                const anchorId = anchorSelect.value;
+
+                if (!confirm(`Clear all calibration data for Anchor ${anchorId}?`)) {
+                    return;
+                }
+
+                try {
+                    const response = await fetch('/calibration/clear', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ anchor_id: anchorId })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.status === 'ok') {
+                        console.log('Calibration cleared');
+                        document.getElementById('calResults').style.display = 'none';
+                        await fetchCalibrationStatus();
+                        updateMeasurementsList();
+                        alert('Calibration cleared');
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                } catch (error) {
+                    console.error('Error clearing calibration:', error);
+                    alert('Failed to clear calibration: ' + error.message);
+                }
+            });
+
+            // Stage fit results into parameter fields
+            const stageFitBtn = document.getElementById('calStageFit');
+            stageFitBtn.addEventListener('click', () => {
+                // Get fit results from the UI
+                const scaleText = document.getElementById('calScale').textContent;
+                const offsetText = document.getElementById('calOffset').textContent;
+
+                if (scaleText === '--' || offsetText === '--') {
+                    alert('Please fit calibration first before staging results');
+                    return;
+                }
+
+                const scale = parseFloat(scaleText);
+                const offset = parseFloat(offsetText);
+
+                // Fill correction_a and correction_b
+                document.getElementById('paramCorrectionA').value = scale.toFixed(4);
+                document.getElementById('paramCorrectionB').value = offset.toFixed(2);
+
+                // Fill defaults for any empty fields
+                const defaults = {
+                    'paramLabelRate': '5',
+                    'paramAntennaDelay': '16336',
+                    'paramKalmanEnable': '1',
+                    'paramKalmanQ': '0.018',
+                    'paramKalmanR': '0.642',
+                    'paramPosEnable': '0',
+                    'paramPosDim': '0'
+                };
+
+                for (const [id, defaultVal] of Object.entries(defaults)) {
+                    const field = document.getElementById(id);
+                    if (!field.value) {
+                        field.value = defaultVal;
+                    }
+                }
+
+                alert(`Fit results staged!\n\nCorrection A: ${scale.toFixed(4)}\nCorrection B: ${offset.toFixed(2)} mm\n\nEmpty fields filled with defaults. Review and click "Write to Device & Save".`);
+            });
+
+            // Plot all anchors
+            plotAllBtn.addEventListener('click', () => {
+                drawMultiAnchorPlot();
+            });
+
+            // Read device parameters
+            const readBtn = document.getElementById('calRead');
+            readBtn.addEventListener('click', async () => {
+                try {
+                    const response = await fetch('/calibration/read_device', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({})
+                    });
+
+                    const data = await response.json();
+
+                    if (data.status === 'ok') {
+                        // Parse the response: +GETDEV:X1,X2,X3,X4,X5,X6,X7,X8,X9
+                        const match = data.response.match(/\+GETDEV:([0-9.,]+)/);
+                        if (match) {
+                            const params = match[1].split(',');
+                            if (params.length >= 9) {
+                                document.getElementById('paramLabelRate').value = params[0];
+                                document.getElementById('paramAntennaDelay').value = params[1];
+                                document.getElementById('paramKalmanEnable').value = params[2];
+                                document.getElementById('paramKalmanQ').value = params[3];
+                                document.getElementById('paramKalmanR').value = params[4];
+                                document.getElementById('paramCorrectionA').value = parseFloat(params[5]).toFixed(4);
+                                document.getElementById('paramCorrectionB').value = parseFloat(params[6]).toFixed(2);
+                                document.getElementById('paramPosEnable').value = params[7];
+                                document.getElementById('paramPosDim').value = params[8];
+
+                                alert('Device parameters loaded into fields!\n\nYou can now edit and write back to device.');
+                            } else {
+                                alert('Unexpected parameter format:\n' + data.response);
+                            }
+                        } else {
+                            alert('Could not parse device response:\n' + data.response);
+                        }
+                    } else {
+                        alert('Error reading device parameters: ' + data.message);
+                    }
+                } catch (error) {
+                    console.error('Error reading device parameters:', error);
+                    alert('Failed to read device parameters: ' + error.message + '\n\nMake sure TTL port is connected.');
+                }
+            });
+
+            // Reset calibration to raw in parameter fields
+            const resetBtn = document.getElementById('calReset');
+            resetBtn.addEventListener('click', () => {
+                // Set all fields to default values with calibration reset
+                document.getElementById('paramLabelRate').value = '5';
+                document.getElementById('paramAntennaDelay').value = '16336';
+                document.getElementById('paramKalmanEnable').value = '1';
+                document.getElementById('paramKalmanQ').value = '0.018';
+                document.getElementById('paramKalmanR').value = '0.642';
+                document.getElementById('paramCorrectionA').value = '1.0000';
+                document.getElementById('paramCorrectionB').value = '0.00';
+                document.getElementById('paramPosEnable').value = '0';
+                document.getElementById('paramPosDim').value = '0';
+
+                alert('Parameters reset to defaults with raw calibration (a=1.0, b=0.0).\n\nClick "Write to Device & Save" to apply.');
+            });
+
+            // Write all parameters to device
+            const writeBtn = document.getElementById('calWrite');
+            writeBtn.addEventListener('click', async () => {
+                // Read all parameter fields
+                const labelRate = document.getElementById('paramLabelRate').value || '5';
+                const antennaDelay = document.getElementById('paramAntennaDelay').value || '16336';
+                const kalmanEnable = document.getElementById('paramKalmanEnable').value || '1';
+                const kalmanQ = document.getElementById('paramKalmanQ').value || '0.018';
+                const kalmanR = document.getElementById('paramKalmanR').value || '0.642';
+                const correctionA = document.getElementById('paramCorrectionA').value || '1.0';
+                const correctionB = document.getElementById('paramCorrectionB').value || '0.0';
+                const posEnable = document.getElementById('paramPosEnable').value || '0';
+                const posDim = document.getElementById('paramPosDim').value || '0';
+
+                const params = {
+                    label_rate: parseInt(labelRate),
+                    antenna_delay: parseInt(antennaDelay),
+                    kalman_enable: parseInt(kalmanEnable),
+                    kalman_q: parseFloat(kalmanQ),
+                    kalman_r: parseFloat(kalmanR),
+                    correction_a: parseFloat(correctionA),
+                    correction_b: parseFloat(correctionB),
+                    positioning_enable: parseInt(posEnable),
+                    positioning_dim: parseInt(posDim)
+                };
+
+                // Confirm before writing
+                const confirmMsg = `Write these parameters to device?\n\n` +
+                    `X1 (Label Rate): ${params.label_rate}\n` +
+                    `X2 (Antenna Delay): ${params.antenna_delay}\n` +
+                    `X3 (Kalman Enable): ${params.kalman_enable}\n` +
+                    `X4 (Kalman Q): ${params.kalman_q}\n` +
+                    `X5 (Kalman R): ${params.kalman_r}\n` +
+                    `X6 (Correction A): ${params.correction_a}\n` +
+                    `X7 (Correction B): ${params.correction_b} mm\n` +
+                    `X8 (Pos Enable): ${params.positioning_enable}\n` +
+                    `X9 (Pos Dim): ${params.positioning_dim}\n\n` +
+                    `Device will save and reboot. Requires TTL port. Continue?`;
+
+                if (!confirm(confirmMsg)) {
+                    return;
+                }
+
+                try {
+                    const response = await fetch('/calibration/write_device', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(params)
+                    });
+
+                    const data = await response.json();
+
+                    if (data.status === 'ok') {
+                        alert('Parameters written to device!\n\nDevice saved and will reboot.\n\nUSB port will auto-reconnect.');
+                    } else {
+                        alert('Error writing parameters: ' + data.message);
+                    }
+                } catch (error) {
+                    console.error('Error writing parameters:', error);
+                    alert('Failed to write parameters: ' + error.message + '\n\nMake sure TTL port is connected.');
+                }
+            });
+        }
+
+        async function fetchCalibrationStatus() {
+            try {
+                const response = await fetch('/calibration/status');
+                calibrationData = await response.json();
+                console.log('Calibration data loaded:', calibrationData);
+            } catch (error) {
+                console.error('Error fetching calibration status:', error);
+            }
+        }
+
+        function updateCurrentDistance() {
+            const anchorId = document.getElementById('calAnchor').value;
+            const anchorData = currentData?.anchors?.[anchorId];
+
+            const distElement = document.getElementById('calCurrentDist');
+
+            if (anchorData && anchorData.connected && anchorData.distance !== null) {
+                distElement.textContent = anchorData.distance.toFixed(3) + ' m';
+                distElement.style.color = '#4CAF50';
+            } else {
+                distElement.textContent = '-- m (disconnected)';
+                distElement.style.color = '#999';
+            }
+        }
+
+        function updateMeasurementsList() {
+            const anchorId = document.getElementById('calAnchor').value;
+            const measurements = calibrationData?.per_anchor?.[anchorId]?.measurements || [];
+            const container = document.getElementById('calMeasurements');
+            const countElement = document.getElementById('calMeasCount');
+
+            countElement.textContent = measurements.length;
+
+            if (measurements.length === 0) {
+                container.innerHTML = '<div style="color: #999; text-align: center; padding: 10px;">No measurements yet</div>';
+                document.getElementById('calResults').style.display = 'none';
+                return;
+            }
+
+            let html = '';
+            measurements.forEach((m, i) => {
+                const error = m.measured_distance_m - m.true_distance_m;
+                const isEditing = container.dataset.editingIndex == i;
+
+                if (isEditing) {
+                    // Show edit mode
+                    html += `
+                        <div style="padding: 5px; border-bottom: 1px solid #ddd; display: flex; gap: 5px; align-items: center; background: #fff3cd;">
+                            <span style="min-width: 20px;">${i + 1}.</span>
+                            <input type="number" id="editTrue_${i}" value="${m.true_distance_m}" step="0.01" style="width: 60px; padding: 2px 4px; border: 1px solid #667eea; border-radius: 3px;">
+                            <span style="font-size: 0.85em;">m</span>
+                            <button onclick="saveMeasurementEdit(${i})" style="padding: 2px 8px; border: none; border-radius: 3px; background: #4CAF50; color: white; cursor: pointer; font-size: 0.85em;">✓</button>
+                            <button onclick="cancelMeasurementEdit()" style="padding: 2px 8px; border: none; border-radius: 3px; background: #9E9E9E; color: white; cursor: pointer; font-size: 0.85em;">✗</button>
+                            <span style="flex: 1; text-align: right; font-size: 0.85em;">Meas: ${m.measured_distance_m.toFixed(3)}m</span>
+                        </div>
+                    `;
+                } else {
+                    // Show normal mode
+                    html += `
+                        <div style="padding: 5px; border-bottom: 1px solid #ddd; display: flex; gap: 5px; align-items: center;">
+                            <span style="flex: 1;">${i + 1}. True: ${m.true_distance_m.toFixed(2)}m | Meas: ${m.measured_distance_m.toFixed(3)}m</span>
+                            <span style="color: ${error > 0 ? '#f44336' : '#4CAF50'}; font-size: 0.85em;">Δ: ${error.toFixed(3)}m</span>
+                            <button onclick="editMeasurement(${i})" style="padding: 2px 6px; border: none; border-radius: 3px; background: #2196F3; color: white; cursor: pointer; font-size: 0.85em;" title="Edit">✏️</button>
+                            <button onclick="deleteMeasurement(${i})" style="padding: 2px 6px; border: none; border-radius: 3px; background: #f44336; color: white; cursor: pointer; font-size: 0.85em;" title="Delete">✗</button>
+                        </div>
+                    `;
+                }
+            });
+
+            container.innerHTML = html;
+        }
+
+        async function deleteMeasurement(index) {
+            const anchorId = document.getElementById('calAnchor').value;
+
+            if (!confirm(`Delete measurement ${index + 1}?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/calibration/delete_measurement', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        anchor_id: anchorId,
+                        index: index
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'ok') {
+                    await fetchCalibrationStatus();
+                    updateMeasurementsList();
+                } else {
+                    alert('Error deleting measurement: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Error deleting measurement:', error);
+                alert('Failed to delete measurement: ' + error.message);
+            }
+        }
+
+        function editMeasurement(index) {
+            const container = document.getElementById('calMeasurements');
+            container.dataset.editingIndex = index;
+            updateMeasurementsList();
+        }
+
+        function cancelMeasurementEdit() {
+            const container = document.getElementById('calMeasurements');
+            delete container.dataset.editingIndex;
+            updateMeasurementsList();
+        }
+
+        async function saveMeasurementEdit(index) {
+            const anchorId = document.getElementById('calAnchor').value;
+            const newValue = parseFloat(document.getElementById(`editTrue_${index}`).value);
+
+            if (isNaN(newValue) || newValue <= 0) {
+                alert('Please enter a valid distance');
+                return;
+            }
+
+            try {
+                const response = await fetch('/calibration/edit_measurement', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        anchor_id: anchorId,
+                        index: index,
+                        true_distance_m: newValue
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'ok') {
+                    const container = document.getElementById('calMeasurements');
+                    delete container.dataset.editingIndex;
+                    await fetchCalibrationStatus();
+                    updateMeasurementsList();
+                } else {
+                    alert('Error updating measurement: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Error updating measurement:', error);
+                alert('Failed to update measurement: ' + error.message);
+            }
+        }
+
+        function drawCalibrationPlot(anchorId, scaleFactor, offsetMm) {
+            const measurements = calibrationData?.per_anchor?.[anchorId]?.measurements || [];
+
+            if (measurements.length === 0) {
+                return;
+            }
+
+            const canvas = document.getElementById('calPlot');
+            const ctx = canvas.getContext('2d');
+
+            // Clear existing chart
+            if (calibrationChart) {
+                calibrationChart.destroy();
+            }
+
+            // Prepare data
+            const measData = measurements.map(m => ({
+                x: m.measured_distance_m,
+                y: m.true_distance_m
+            }));
+
+            // Calculate fit line points
+            const minMeas = Math.min(...measurements.map(m => m.measured_distance_m));
+            const maxMeas = Math.max(...measurements.map(m => m.measured_distance_m));
+
+            const fitLine = [
+                { x: minMeas, y: scaleFactor * minMeas + offsetMm / 1000.0 },
+                { x: maxMeas, y: scaleFactor * maxMeas + offsetMm / 1000.0 }
+            ];
+
+            // Perfect line (y=x)
+            const perfectLine = [
+                { x: minMeas, y: minMeas },
+                { x: maxMeas, y: maxMeas }
+            ];
+
+            calibrationChart = new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: [
+                        {
+                            label: 'Measurements',
+                            data: measData,
+                            backgroundColor: '#667eea',
+                            pointRadius: 6,
+                            pointHoverRadius: 8
+                        },
+                        {
+                            label: 'Fitted Line',
+                            data: fitLine,
+                            type: 'line',
+                            borderColor: '#4CAF50',
+                            borderWidth: 2,
+                            fill: false,
+                            pointRadius: 0
+                        },
+                        {
+                            label: 'Perfect (y=x)',
+                            data: perfectLine,
+                            type: 'line',
+                            borderColor: '#ccc',
+                            borderWidth: 1,
+                            borderDash: [5, 5],
+                            fill: false,
+                            pointRadius: 0
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `Calibration for Anchor ${anchorId}`
+                        },
+                        legend: {
+                            display: true
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Measured Distance (m)'
+                            },
+                            ticks: {
+                                callback: function(value) { return value.toFixed(2); }
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'True Distance (m)'
+                            },
+                            ticks: {
+                                callback: function(value) { return value.toFixed(2); }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function drawMultiAnchorPlot() {
+            const perAnchor = calibrationData?.per_anchor || {};
+
+            // Create a new window/modal for the comparison plot
+            const plotWindow = window.open('', 'Multi-Anchor Comparison', 'width=900,height=700');
+
+            plotWindow.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Multi-Anchor Calibration Comparison</title>
+                    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+                    <style>
+                        body {
+                            font-family: Arial, sans-serif;
+                            padding: 20px;
+                            background: #f5f5f5;
+                        }
+                        canvas {
+                            background: white;
+                            border-radius: 8px;
+                            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                        }
+                    </style>
+                </head>
+                <body>
+                    <h2 style="text-align: center; color: #333;">Multi-Anchor Calibration Comparison</h2>
+                    <canvas id="multiPlot" width="800" height="500"></canvas>
+                    <script>
+                        const perAnchor = ${JSON.stringify(perAnchor)};
+                        const colors = ['#667eea', '#f44336', '#4CAF50', '#FF9800', '#9C27B0', '#00BCD4', '#FFEB3B', '#795548'];
+
+                        const datasets = [];
+
+                        // Add perfect line first
+                        let allMeas = [];
+                        for (let i = 0; i < 8; i++) {
+                            const measurements = perAnchor[String(i)]?.measurements || [];
+                            allMeas = allMeas.concat(measurements.map(m => m.measured_distance_m));
+                        }
+
+                        if (allMeas.length > 0) {
+                            const minVal = Math.min(...allMeas);
+                            const maxVal = Math.max(...allMeas);
+
+                            datasets.push({
+                                label: 'Perfect (y=x)',
+                                data: [{ x: minVal, y: minVal }, { x: maxVal, y: maxVal }],
+                                type: 'line',
+                                borderColor: '#ccc',
+                                borderWidth: 2,
+                                borderDash: [5, 5],
+                                fill: false,
+                                pointRadius: 0
+                            });
+                        }
+
+                        // Add data for each anchor
+                        for (let anchorId = 0; anchorId < 8; anchorId++) {
+                            const anchor = perAnchor[String(anchorId)];
+                            if (!anchor) continue;
+
+                            const measurements = anchor.measurements || [];
+                            if (measurements.length < 2) continue;
+
+                            const scale = anchor.scale_factor || 1.0;
+                            const offset = anchor.offset_mm || 0.0;
+
+                            // Add measurements
+                            datasets.push({
+                                label: \`A\${anchorId} Measurements\`,
+                                data: measurements.map(m => ({ x: m.measured_distance_m, y: m.true_distance_m })),
+                                backgroundColor: colors[anchorId],
+                                pointRadius: 6
+                            });
+
+                            // Add fit line
+                            const minMeas = Math.min(...measurements.map(m => m.measured_distance_m));
+                            const maxMeas = Math.max(...measurements.map(m => m.measured_distance_m));
+
+                            datasets.push({
+                                label: \`A\${anchorId} Fit (a=\${scale.toFixed(3)}, b=\${offset.toFixed(1)}mm)\`,
+                                data: [
+                                    { x: minMeas, y: scale * minMeas + offset / 1000.0 },
+                                    { x: maxMeas, y: scale * maxMeas + offset / 1000.0 }
+                                ],
+                                type: 'line',
+                                borderColor: colors[anchorId],
+                                borderWidth: 2,
+                                fill: false,
+                                pointRadius: 0
+                            });
+                        }
+
+                        const ctx = document.getElementById('multiPlot').getContext('2d');
+                        new Chart(ctx, {
+                            type: 'scatter',
+                            data: { datasets: datasets },
+                            options: {
+                                responsive: false,
+                                plugins: {
+                                    title: {
+                                        display: true,
+                                        text: 'All Anchors Calibration Comparison',
+                                        font: { size: 16 }
+                                    },
+                                    legend: {
+                                        display: true,
+                                        position: 'right'
+                                    }
+                                },
+                                scales: {
+                                    x: {
+                                        title: {
+                                            display: true,
+                                            text: 'Measured Distance (m)'
+                                        }
+                                    },
+                                    y: {
+                                        title: {
+                                            display: true,
+                                            text: 'True Distance (m)'
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    </script>
+                </body>
+                </html>
+            `);
+
+            plotWindow.document.close();
+        }
+
+        // ===== Initialize =====
+        setupCalibrationControls();
+
+        // Update current distance every 500ms
+        setInterval(updateCurrentData, 500);
+
+        // Initial update
+        updateCurrentData();
+    </script>
+</body>
+</html>

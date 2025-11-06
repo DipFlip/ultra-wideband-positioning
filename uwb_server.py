@@ -18,7 +18,7 @@ latest_data = {
     'anchors': {},
     'packet_count': 0,
     'device_port': '',
-    'format': 'CmdM:4[ - Auto-detect anchors',
+    'format': 'Waiting for data...',
     'position': {
         'x': None,
         'y': None,
@@ -376,7 +376,7 @@ def read_uwb_data(port='/dev/ttyACM0'):
                                 'anchors': all_anchors_status,
                                 'packet_count': packet_count,
                                 'device_port': port,
-                                'format': f'CmdM:4[ - {len(anchors)} Anchors',
+                                'format': f'{len(anchors)} Active Anchor{"s" if len(anchors) != 1 else ""}',
                                 'position': position_data
                             })
 
@@ -580,6 +580,61 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
 
             except Exception as e:
                 print(f"Error clearing calibration: {e}")
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+
+        elif self.path == '/calibration/delete_measurement':
+            try:
+                data = json.loads(post_data.decode('utf-8'))
+                anchor_id = str(data['anchor_id'])
+                measurement_index = int(data['index'])
+
+                if anchor_id in calibration_config.get('per_anchor', {}):
+                    measurements = calibration_config['per_anchor'][anchor_id]['measurements']
+                    if 0 <= measurement_index < len(measurements):
+                        deleted = measurements.pop(measurement_index)
+                        save_calibration()
+                        print(f"✓ Deleted measurement {measurement_index} for anchor {anchor_id}")
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'ok'}).encode())
+
+            except Exception as e:
+                print(f"Error deleting measurement: {e}")
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+
+        elif self.path == '/calibration/edit_measurement':
+            try:
+                data = json.loads(post_data.decode('utf-8'))
+                anchor_id = str(data['anchor_id'])
+                measurement_index = int(data['index'])
+                new_true_distance = float(data['true_distance_m'])
+
+                if anchor_id in calibration_config.get('per_anchor', {}):
+                    measurements = calibration_config['per_anchor'][anchor_id]['measurements']
+                    if 0 <= measurement_index < len(measurements):
+                        measurements[measurement_index]['true_distance_m'] = new_true_distance
+                        save_calibration()
+                        print(f"✓ Updated measurement {measurement_index} for anchor {anchor_id} to {new_true_distance}m")
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'ok'}).encode())
+
+            except Exception as e:
+                print(f"Error editing measurement: {e}")
                 self.send_response(500)
                 self.send_header('Content-type', 'application/json')
                 self.send_header('Access-Control-Allow-Origin', '*')
