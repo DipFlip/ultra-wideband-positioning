@@ -285,16 +285,28 @@ def read_uwb_data(port='/dev/ttyACM0'):
     packet_count = 0
     detected_anchors = set()
     reconnect_delay = 2.0  # seconds
+    failed_attempts = 0
+    last_error_print = 0
+    was_connected = False
 
-    def connect_serial():
+    def connect_serial(silent=False):
         """Attempt to connect to serial port"""
+        import os
+
+        # Check if port device file exists first
+        if not os.path.exists(port):
+            if not silent:
+                print(f"Port {port} does not exist")
+            return None
+
         try:
             s = serial.Serial(port, 115200, timeout=0.1)
             time.sleep(0.5)
             print(f"✓ Connected to {port}")
             return s
         except serial.SerialException as e:
-            print(f"Could not open {port}: {e}")
+            if not silent:
+                print(f"Could not open {port}: {e}")
             return None
 
     # Initial connection (optional - will retry in loop if fails)
@@ -302,17 +314,42 @@ def read_uwb_data(port='/dev/ttyACM0'):
     if ser is None:
         print(f"\n⚠️  Device not connected yet. Will keep trying to connect to {port}...")
         print("   Server is running - connect device anytime and it will auto-detect.\n")
+    else:
+        was_connected = True
 
     while True:
         try:
             # Check if port is still open
             if ser is None or not ser.is_open:
-                print(f"Serial port disconnected. Attempting to reconnect...")
+                if was_connected:
+                    # Only print once when initially disconnected
+                    print(f"Serial port disconnected. Attempting to reconnect...")
+                    was_connected = False
+                    failed_attempts = 0
+
                 time.sleep(reconnect_delay)
-                ser = connect_serial()
+
+                # Try to reconnect silently (don't spam errors)
+                ser = connect_serial(silent=True)
+
                 if ser is None:
+                    failed_attempts += 1
+
+                    # Only print status occasionally (every 30 seconds at 2 second intervals = 15 attempts)
+                    if failed_attempts % 15 == 0:
+                        import os
+                        if os.path.exists(port):
+                            print(f"Still trying to connect to {port}... ({failed_attempts} attempts)")
+                        else:
+                            print(f"Waiting for {port} to appear... ({failed_attempts} attempts)")
+
                     time.sleep(reconnect_delay)
                     continue
+                else:
+                    # Successfully reconnected
+                    was_connected = True
+                    failed_attempts = 0
+
                 buffer = b''  # Clear buffer on reconnect
 
             if ser.in_waiting > 0:
@@ -659,12 +696,23 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
                 }).encode())
 
             except Exception as e:
+                error_msg = str(e)
                 print(f"Error reading device parameters: {e}")
+                print(f"Exception type: {type(e).__name__}")
+
+                # Provide more helpful error messages
+                if "No TTL port found" in error_msg or "Could not find serial device" in error_msg:
+                    error_msg = "TTL port not found. Please connect the serial cable and ensure the device is powered on."
+                elif "Permission denied" in error_msg:
+                    error_msg = "Permission denied accessing TTL port. Check port permissions."
+                elif "timed out" in error_msg.lower():
+                    error_msg = "Device not responding. Check TTL connection and power."
+
                 self.send_response(500)
                 self.send_header('Content-type', 'application/json')
                 self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
-                self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+                self.wfile.write(json.dumps({'status': 'error', 'message': error_msg}).encode())
 
         elif self.path == '/calibration/reset_device':
             try:
@@ -772,8 +820,10 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
 
         elif self.path == '/calibration/write_device':
             try:
-                content_length = int(self.headers['Content-Length'])
-                post_data = self.rfile.read(content_length)
+                # post_data was already read at the top of do_POST()
+                if not post_data:
+                    raise ValueError("No data received")
+
                 params = json.loads(post_data.decode('utf-8'))
 
                 from bu03_util import BU03Device
@@ -789,20 +839,10 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
                 positioning_enable = params.get('positioning_enable', 0)
                 positioning_dim = params.get('positioning_dim', 0)
 
-                print(f"Writing device parameters:")
-                print(f"  X1 (Label Rate): {label_rate}")
-                print(f"  X2 (Antenna Delay): {antenna_delay}")
-                print(f"  X3 (Kalman Enable): {kalman_enable}")
-                print(f"  X4 (Kalman Q): {kalman_q}")
-                print(f"  X5 (Kalman R): {kalman_r}")
-                print(f"  X6 (Correction A): {correction_a}")
-                print(f"  X7 (Correction B): {correction_b} mm")
-                print(f"  X8 (Positioning Enable): {positioning_enable}")
-                print(f"  X9 (Positioning Dim): {positioning_dim}")
-
                 # Connect to device and write all parameters
+                result = None
                 with BU03Device() as device:
-                    device.set_device_params(
+                    result = device.set_device_params(
                         label_rate=label_rate,
                         antenna_delay=antenna_delay,
                         kalman_enable=kalman_enable,
@@ -814,24 +854,43 @@ class UWBRequestHandler(SimpleHTTPRequestHandler):
                         positioning_dim=positioning_dim
                     )
 
-                print(f"✓ Parameters written to device (saved and rebooting)")
+                print(f"✓ Parameters written to device")
 
+                # Send success response immediately (before device finishes rebooting)
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
                 self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
                 self.wfile.write(json.dumps({
                     'status': 'ok',
-                    'params': params
+                    'params': params,
+                    'response': result
                 }).encode())
 
             except Exception as e:
+                error_msg = str(e)
                 print(f"Error writing device parameters: {e}")
-                self.send_response(500)
-                self.send_header('Content-type', 'application/json')
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.end_headers()
-                self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+                print(f"Exception type: {type(e).__name__}")
+
+                # Provide more helpful error messages
+                if "No TTL port found" in error_msg or "Could not find serial device" in error_msg:
+                    error_msg = "TTL port not found. Please connect the serial cable and ensure the device is powered on."
+                elif "Permission denied" in error_msg:
+                    error_msg = "Permission denied accessing TTL port. Check port permissions."
+                elif "timed out" in error_msg.lower():
+                    error_msg = "Device not responding. Check TTL connection and power."
+                elif "Empty request body" in error_msg or "No data received" in error_msg:
+                    error_msg = "Request was aborted or incomplete. Please try again."
+
+                try:
+                    self.send_response(500)
+                    self.send_header('Content-type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({'status': 'error', 'message': error_msg}).encode())
+                except (BrokenPipeError, ConnectionResetError):
+                    # Client already disconnected (timeout) - just log it
+                    print(f"Client disconnected before response could be sent")
 
         else:
             self.send_response(404)

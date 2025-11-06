@@ -224,7 +224,7 @@
                     <div>R² (fit quality): <strong id="calR2">--</strong></div>
                 </div>
                 <div style="margin-top: 12px; background: white; padding: 10px; border-radius: 5px;">
-                    <canvas id="calPlot" style="max-height: 250px;"></canvas>
+                    <canvas id="calPlot" style="height: 450px; max-width: 500px; margin: 0 auto;"></canvas>
                 </div>
             </div>
             <div class="control-item" style="margin-top: 10px;">
@@ -481,58 +481,84 @@
             // Read device parameters
             const readBtn = document.getElementById('calRead');
             readBtn.addEventListener('click', async () => {
-                try {
-                    const response = await fetch('/calibration/read_device', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({})
-                    });
+                const maxRetries = 3;
+                let lastError = null;
 
-                    const data = await response.json();
+                for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                    try {
+                        const response = await fetch('/calibration/read_device', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({})
+                        });
 
-                    if (data.status === 'ok') {
-                        // Parse the response: cap:5 anndelay:16336, kalman_enable:1, kalman_Q:0.018, kalman_R:0.642, para_a:1.0000, para_b:0.00, pos_enable:0, pos_dimen:0
-                        const response = data.response;
+                        const data = await response.json();
 
-                        // Extract values using regex for each parameter
-                        const extractValue = (param) => {
-                            const regex = new RegExp(param + ':([-0-9.]+)');
-                            const match = response.match(regex);
-                            return match ? match[1] : null;
-                        };
+                        if (data.status === 'ok') {
+                            // Parse the response: cap:5 anndelay:16336, kalman_enable:1, kalman_Q:0.018, kalman_R:0.642, para_a:1.0000, para_b:0.00, pos_enable:0, pos_dimen:0
+                            const response = data.response;
 
-                        const cap = extractValue('cap');
-                        const anndelay = extractValue('anndelay');
-                        const kalman_enable = extractValue('kalman_enable');
-                        const kalman_Q = extractValue('kalman_Q');
-                        const kalman_R = extractValue('kalman_R');
-                        const para_a = extractValue('para_a');
-                        const para_b = extractValue('para_b');
-                        const pos_enable = extractValue('pos_enable');
-                        const pos_dimen = extractValue('pos_dimen');
+                            // Extract values using regex for each parameter
+                            const extractValue = (param) => {
+                                const regex = new RegExp(param + ':([-0-9.]+)');
+                                const match = response.match(regex);
+                                return match ? match[1] : null;
+                            };
 
-                        if (cap && anndelay && kalman_enable && kalman_Q && kalman_R && para_a && para_b !== null && pos_enable !== null && pos_dimen !== null) {
-                            document.getElementById('paramLabelRate').value = cap;
-                            document.getElementById('paramAntennaDelay').value = anndelay;
-                            document.getElementById('paramKalmanEnable').value = kalman_enable;
-                            document.getElementById('paramKalmanQ').value = kalman_Q;
-                            document.getElementById('paramKalmanR').value = kalman_R;
-                            document.getElementById('paramCorrectionA').value = parseFloat(para_a).toFixed(4);
-                            document.getElementById('paramCorrectionB').value = parseFloat(para_b).toFixed(2);
-                            document.getElementById('paramPosEnable').value = pos_enable;
-                            document.getElementById('paramPosDim').value = pos_dimen;
+                            const cap = extractValue('cap');
+                            const anndelay = extractValue('anndelay');
+                            const kalman_enable = extractValue('kalman_enable');
+                            const kalman_Q = extractValue('kalman_Q');
+                            const kalman_R = extractValue('kalman_R');
+                            const para_a = extractValue('para_a');
+                            const para_b = extractValue('para_b');
+                            const pos_enable = extractValue('pos_enable');
+                            const pos_dimen = extractValue('pos_dimen');
 
-                            alert('Device parameters loaded into fields!\n\nYou can now edit and write back to device.');
+                            if (cap && anndelay && kalman_enable && kalman_Q && kalman_R && para_a && para_b !== null && pos_enable !== null && pos_dimen !== null) {
+                                document.getElementById('paramLabelRate').value = cap;
+                                document.getElementById('paramAntennaDelay').value = anndelay;
+                                document.getElementById('paramKalmanEnable').value = kalman_enable;
+                                document.getElementById('paramKalmanQ').value = kalman_Q;
+                                document.getElementById('paramKalmanR').value = kalman_R;
+                                document.getElementById('paramCorrectionA').value = parseFloat(para_a).toFixed(4);
+                                document.getElementById('paramCorrectionB').value = parseFloat(para_b).toFixed(2);
+                                document.getElementById('paramPosEnable').value = pos_enable;
+                                document.getElementById('paramPosDim').value = pos_dimen;
+
+                                alert('Device parameters loaded into fields!\n\nYou can now edit and write back to device.');
+                                return; // Success - exit the retry loop
+                            } else {
+                                // Could not parse - retry
+                                lastError = 'Could not parse all parameters from device response:\n' + response;
+                                console.log(`Attempt ${attempt}/${maxRetries} failed: parse error`);
+                                if (attempt < maxRetries) {
+                                    await new Promise(resolve => setTimeout(resolve, 200)); // Wait 200ms before retry
+                                    continue;
+                                }
+                            }
                         } else {
-                            alert('Could not parse all parameters from device response:\n' + response);
+                            // Error response - retry
+                            lastError = 'Error reading device parameters: ' + data.message;
+                            console.log(`Attempt ${attempt}/${maxRetries} failed: ${data.message}`);
+                            if (attempt < maxRetries) {
+                                await new Promise(resolve => setTimeout(resolve, 200)); // Wait 200ms before retry
+                                continue;
+                            }
                         }
-                    } else {
-                        alert('Error reading device parameters: ' + data.message);
+                    } catch (error) {
+                        lastError = 'Failed to read device parameters: ' + error.message + '\n\nMake sure TTL port is connected.';
+                        console.log(`Attempt ${attempt}/${maxRetries} failed:`, error);
+                        if (attempt < maxRetries) {
+                            await new Promise(resolve => setTimeout(resolve, 200)); // Wait 200ms before retry
+                            continue;
+                        }
                     }
-                } catch (error) {
-                    console.error('Error reading device parameters:', error);
-                    alert('Failed to read device parameters: ' + error.message + '\n\nMake sure TTL port is connected.');
                 }
+
+                // If we get here, all retries failed
+                console.error('All retry attempts failed');
+                alert(lastError);
             });
 
             // Reset calibration to raw in parameter fields
@@ -595,24 +621,76 @@
                     return;
                 }
 
-                try {
-                    const response = await fetch('/calibration/write_device', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(params)
-                    });
+                // Show writing indicator by disabling button
+                writeBtn.disabled = true;
+                writeBtn.style.opacity = '0.5';
+                writeBtn.textContent = '⏳ Writing...';
 
-                    const data = await response.json();
+                const maxRetries = 2;
+                let lastError = null;
 
-                    if (data.status === 'ok') {
-                        alert('Parameters written to device!\n\nDevice saved and will reboot.\n\nUSB port will auto-reconnect.');
-                    } else {
-                        alert('Error writing parameters: ' + data.message);
+                for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                    try {
+                        // Create abort controller for timeout
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+                        const response = await fetch('/calibration/write_device', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(params),
+                            signal: controller.signal
+                        });
+
+                        clearTimeout(timeoutId);
+                        const data = await response.json();
+
+                        if (data.status === 'ok') {
+                            // Success
+                            writeBtn.disabled = false;
+                            writeBtn.style.opacity = '1';
+                            writeBtn.textContent = '📝 Write to Device & Save';
+                            alert('✓ Parameters successfully written to device!\n\nDevice saved and will reboot.\n\nUSB port will auto-reconnect in a few seconds.');
+                            return;
+                        } else {
+                            // Error response
+                            lastError = data.message || 'Unknown error';
+                            console.log(`Attempt ${attempt}/${maxRetries} failed: ${lastError}`);
+                            if (attempt < maxRetries) {
+                                await new Promise(resolve => setTimeout(resolve, 500));
+                                continue;
+                            }
+                        }
+                    } catch (error) {
+                        if (error.name === 'AbortError') {
+                            lastError = 'Request timed out after 10 seconds. Device may still be processing.';
+                            // Don't retry on timeout - the request might have succeeded but response was slow
+                            break;
+                        } else {
+                            lastError = error.message;
+                        }
+
+                        if (attempt < maxRetries) {
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                            continue;
+                        }
                     }
-                } catch (error) {
-                    console.error('Error writing parameters:', error);
-                    alert('Failed to write parameters: ' + error.message + '\n\nMake sure TTL port is connected.');
                 }
+
+                // All retries failed
+                writeBtn.disabled = false;
+                writeBtn.style.opacity = '1';
+                writeBtn.textContent = '📝 Write to Device & Save';
+
+                let errorAlert = `✗ Failed to write parameters.\n\nError: ${lastError}\n\n`;
+
+                if (lastError.includes('timed out')) {
+                    errorAlert += `The request timed out, but the write may have succeeded.\n\nTo verify:\n• Click "Read from Device" to check if parameters were updated\n• Look for device reboot in server console\n• Check that TTL port is connected and responsive`;
+                } else {
+                    errorAlert += `Troubleshooting:\n• Make sure TTL (serial) port is connected\n• Check that device is powered on\n• Try clicking "Read from Device" first to verify connection\n• Check server console for detailed error messages`;
+                }
+
+                alert(errorAlert);
             });
         }
 
@@ -882,7 +960,7 @@
                 <html>
                 <head>
                     <title>Multi-Anchor Calibration Comparison</title>
-                    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+                    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"><\/script>
                     <style>
                         body {
                             font-family: Arial, sans-serif;

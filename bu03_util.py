@@ -57,25 +57,24 @@ class BU03Device:
 
         return response.decode('utf-8', errors='replace').strip()
 
-    def send_with_reboot(self, cmd, reboot_wait=3):
+    def send_with_reboot(self, cmd, reboot_wait=3, wait_for_reconnect=True):
         """Send command that causes device to reboot (like AT+SAVE)"""
-        print(f"Sending: {cmd}")
         response = self.send(cmd)
-        print(f"Response: {response}")
 
         if "OK" in response:
-            print(f"Command successful. Device will reboot...")
-            print(f"Waiting {reboot_wait} seconds for reboot to complete...")
-            time.sleep(reboot_wait)
+            if wait_for_reconnect:
+                print(f"Device rebooting, waiting {reboot_wait}s...")
+                time.sleep(reboot_wait)
 
-            # Read and discard boot messages
-            if self.ser.in_waiting > 0:
-                boot_msg = self.ser.read(self.ser.in_waiting)
-                print(f"Boot messages received ({len(boot_msg)} bytes)")
+                # Read and discard boot messages
+                if self.ser.in_waiting > 0:
+                    self.ser.read(self.ser.in_waiting)
 
-            # Reconnect to ensure clean state
-            self.connect()
-            print("Reconnected to device")
+                # Reconnect to ensure clean state
+                self.connect()
+                print("Device reconnected")
+            else:
+                print("Device will reboot in background")
 
         return response
 
@@ -161,12 +160,13 @@ class BU03Device:
               f"{kalman_q},{kalman_r},{correction_a:.4f},{correction_b:.2f}," \
               f"{positioning_enable},{positioning_dim}"
 
+        print(f"Writing device parameters (a={correction_a:.4f}, b={correction_b:.2f}mm)...")
         response = self.send(cmd)
-        print(f"Set device params: {response}")
 
         if save and "OK" in response:
-            print("\nSaving configuration (device will reboot)...")
-            self.send_with_reboot("AT+SAVE")
+            print("Saving configuration...")
+            # Don't wait for reconnect - let device reboot in background
+            self.send_with_reboot("AT+SAVE", wait_for_reconnect=False)
 
         return response
 
