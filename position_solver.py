@@ -158,6 +158,59 @@ class PositionSolver:
             residuals.append(calculated_dist - measured_dist)
         return np.array(residuals)
 
+    def calculate_two_anchor_positions(self, anchor1_pos, dist1, anchor2_pos, dist2):
+        """
+        Calculate the two candidate positions from two anchor measurements.
+        The intersection of two spheres is a circle. We find two points on this circle
+        at a reasonable z-height (average of anchor heights or 1.0m).
+
+        Returns: array of two 3D positions, or None if no intersection
+        """
+        anchor1_pos = np.array(anchor1_pos)
+        anchor2_pos = np.array(anchor2_pos)
+
+        # Vector from anchor1 to anchor2
+        d_vec = anchor2_pos - anchor1_pos
+        d = np.linalg.norm(d_vec)
+
+        # Check if spheres intersect
+        if d > dist1 + dist2 or d < abs(dist1 - dist2) or d == 0:
+            return None
+
+        # Unit vector from anchor1 to anchor2
+        u = d_vec / d
+
+        # Distance from anchor1 to the plane where the circles intersect
+        # Using the formula: a = (r1² - r2² + d²) / (2d)
+        a = (dist1**2 - dist2**2 + d**2) / (2 * d)
+
+        # Check if the intersection point is valid
+        h_squared = dist1**2 - a**2
+        if h_squared < 0:
+            return None
+
+        h = np.sqrt(h_squared)
+
+        # Point on the line between anchors where the circle lies
+        p_center = anchor1_pos + a * u
+
+        # We need a vector perpendicular to u to define the circle plane
+        # Choose a vector perpendicular to u
+        if abs(u[2]) < 0.9:  # u is not too vertical
+            # Use z-axis cross product
+            perp = np.cross(u, np.array([0, 0, 1]))
+        else:
+            # Use x-axis cross product
+            perp = np.cross(u, np.array([1, 0, 0]))
+
+        perp = perp / np.linalg.norm(perp)
+
+        # Two candidate positions on the circle
+        candidate1 = p_center + h * perp
+        candidate2 = p_center - h * perp
+
+        return np.array([candidate1, candidate2])
+
     def calculate_position_lsq(self, measurements):
         """
         Calculate 3D position using non-linear least squares
@@ -168,16 +221,36 @@ class PositionSolver:
         valid_measurements = {}
         anchor_positions = []
         distances = []
+        anchor_ids = []
 
         for anchor_id, distance in measurements.items():
             if anchor_id in self.anchor_positions and distance > 0:
                 valid_measurements[anchor_id] = distance
                 anchor_positions.append(self.anchor_positions[anchor_id])
                 distances.append(distance)
+                anchor_ids.append(anchor_id)
 
         num_anchors = len(valid_measurements)
 
-        # Check minimum anchors
+        # Handle 1 anchor case - return sphere visualization data
+        if num_anchors == 1:
+            # Return the anchor position and distance for visualization
+            # The actual position is indeterminate, but we return data for sphere rendering
+            return None, False, None, num_anchors, f"Single anchor mode: anchor {anchor_ids[0]} at distance {distances[0]:.2f}m"
+
+        # Handle 2 anchor case - calculate two candidate positions
+        if num_anchors == 2:
+            candidates = self.calculate_two_anchor_positions(
+                anchor_positions[0], distances[0],
+                anchor_positions[1], distances[1]
+            )
+            if candidates is not None:
+                # Return both candidates - the visualization will handle this
+                return None, False, None, num_anchors, f"Two anchor mode: {len(candidates)} candidate positions"
+            else:
+                return None, False, None, num_anchors, "Two anchors: spheres do not intersect (check distances)"
+
+        # Check minimum anchors for full positioning
         if num_anchors < self.min_anchors:
             reason = f"Insufficient anchors: {num_anchors}/{self.min_anchors} (valid from {len(measurements)} total)"
             return None, False, None, num_anchors, reason
@@ -290,17 +363,57 @@ class PositionSolver:
         measurements: dict of {anchor_id: distance}
         Returns: dict with position, velocity, confidence, etc.
         """
-        position, success, residual, num_anchors, failure_reason = self.calculate_position_lsq(measurements)
+        # Store measurements for visualization
+        valid_measurements = {}
+        anchor_positions_list = []
+        distances_list = []
+        anchor_ids_list = []
+
+        for anchor_id, distance in measurements.items():
+            if anchor_id in self.anchor_positions and distance > 0:
+                valid_measurements[anchor_id] = distance
+                anchor_positions_list.append(self.anchor_positions[anchor_id])
+                distances_list.append(distance)
+                anchor_ids_list.append(anchor_id)
+
+        num_anchors = len(valid_measurements)
 
         result = {
-            'success': success,
+            'success': False,
             'num_anchors': num_anchors,
             'position': None,
             'velocity': None,
-            'residual': residual,
+            'residual': None,
             'filtered': False,
-            'failure_reason': failure_reason
+            'failure_reason': None,
+            'measurements': valid_measurements,  # For sphere visualization
+            'candidate_positions': None  # For 2-anchor mode
         }
+
+        # Handle 1 anchor case
+        if num_anchors == 1:
+            result['failure_reason'] = f"Single anchor mode: anchor {anchor_ids_list[0]} at distance {distances_list[0]:.2f}m"
+            return result
+
+        # Handle 2 anchor case
+        if num_anchors == 2:
+            candidates = self.calculate_two_anchor_positions(
+                anchor_positions_list[0], distances_list[0],
+                anchor_positions_list[1], distances_list[1]
+            )
+            if candidates is not None:
+                result['candidate_positions'] = [c.tolist() for c in candidates]
+                result['failure_reason'] = f"Two anchor mode: {len(candidates)} candidate positions"
+            else:
+                result['failure_reason'] = "Two anchors: spheres do not intersect (check distances)"
+            return result
+
+        # For 3+ anchors, use the standard positioning
+        position, success, residual, _, failure_reason = self.calculate_position_lsq(measurements)
+
+        result['success'] = success
+        result['residual'] = residual
+        result['failure_reason'] = failure_reason
 
         if not success or position is None:
             return result

@@ -495,6 +495,14 @@
                             </button>
                         </div>
                     </div>
+                    <div class="control-item">
+                        <div class="controls-title" style="margin-top: 15px; margin-bottom: 10px;">Distance Visualization</div>
+                        <div style="display: flex; gap: 10px;">
+                            <button id="sphereToggle" style="flex: 1; padding: 10px; border: none; border-radius: 5px; background: #667eea; color: white; font-weight: bold; cursor: pointer; font-size: 0.9em;">
+                                Show Spheres
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -609,10 +617,30 @@
         function updatePosition(position) {
             const failureReasonElement = document.getElementById('positionFailureReason');
 
-            if (position.success && position.x !== null) {
-                document.getElementById('posX').textContent = position.x.toFixed(2);
-                document.getElementById('posY').textContent = position.y.toFixed(2);
-                document.getElementById('posZ').textContent = position.z.toFixed(2);
+            // Update distance spheres if enabled
+            if (position.measurements) {
+                updateDistanceSpheres(position.measurements);
+            }
+
+            // Handle candidate positions for 2-anchor mode
+            if (position.candidate_positions) {
+                updateCandidatePositions(position.candidate_positions);
+                // Hide the main tag in candidate mode
+                if (tagMesh) {
+                    tagMesh.visible = false;
+                }
+            } else {
+                clearCandidatePositions();
+                if (tagMesh) {
+                    tagMesh.visible = true;
+                }
+            }
+
+            if (position.success && position.position !== null) {
+                const pos = position.position;
+                document.getElementById('posX').textContent = pos[0].toFixed(2);
+                document.getElementById('posY').textContent = pos[1].toFixed(2);
+                document.getElementById('posZ').textContent = pos[2].toFixed(2);
 
                 // DO NOT hide failure message on success - let the 5s timer run out
                 // This ensures failures are visible even if successes occur right after
@@ -621,9 +649,9 @@
                 // Map real coords to Three.js: X=X, Y=Z(up), Z=depth-Y(north inverted)
                 if (tagMesh && anchorConfig) {
                     const roomDepth = anchorConfig.room.depth || 3;
-                    const x = position.x;
-                    const y = position.z;
-                    const z = roomDepth - position.y;
+                    const x = pos[0];
+                    const y = pos[2];
+                    const z = roomDepth - pos[1];
 
                     tagMesh.position.set(x, y, z);
 
@@ -642,7 +670,7 @@
 
                 // Show failure reason if available
                 if (position.failure_reason) {
-                    failureReasonElement.textContent = '⚠️ Position solver failed: ' + position.failure_reason;
+                    failureReasonElement.textContent = '⚠️ ' + position.failure_reason;
                     failureReasonElement.style.display = 'block';
                 } else {
                     failureReasonElement.textContent = '⚠️ Position solver failed (no reason provided)';
@@ -683,6 +711,11 @@
         let trailEnabled = false;
         const TRAIL_DURATION = 4000; // 4 seconds in milliseconds
         const TRAIL_SEGMENTS = 20; // Number of segments for opacity gradient
+
+        // Distance sphere visualization
+        let distanceSpheres = {}; // Map of anchor_id to sphere mesh
+        let spheresEnabled = false;
+        let candidateMarkers = []; // Array of candidate position markers for 2-anchor mode
 
         function init3DScene() {
             const container = document.getElementById('viewer3d');
@@ -938,6 +971,99 @@
             trailLines = [];
         }
 
+        function updateDistanceSpheres(measurements) {
+            if (!spheresEnabled || !anchorConfig) return;
+
+            const roomDepth = anchorConfig.room.depth || 3;
+
+            // Remove old spheres
+            Object.values(distanceSpheres).forEach(sphere => {
+                scene.remove(sphere);
+                sphere.geometry.dispose();
+                sphere.material.dispose();
+            });
+            distanceSpheres = {};
+
+            // Create new spheres for each measurement
+            for (const [anchorId, distance] of Object.entries(measurements)) {
+                const anchorData = anchorConfig.anchors[anchorId];
+                if (anchorData && anchorData.enabled) {
+                    const pos = anchorData.position;
+
+                    // Create wireframe sphere
+                    const geometry = new THREE.SphereGeometry(distance, 32, 32);
+                    const material = new THREE.MeshBasicMaterial({
+                        color: 0x4CAF50,
+                        wireframe: true,
+                        transparent: true,
+                        opacity: 0.3
+                    });
+                    const sphere = new THREE.Mesh(geometry, material);
+
+                    // Map real coords to Three.js: X=X, Y=Z(up), Z=depth-Y(north inverted)
+                    sphere.position.set(pos[0], pos[2], roomDepth - pos[1]);
+                    scene.add(sphere);
+                    distanceSpheres[anchorId] = sphere;
+                }
+            }
+        }
+
+        function clearDistanceSpheres() {
+            Object.values(distanceSpheres).forEach(sphere => {
+                scene.remove(sphere);
+                sphere.geometry.dispose();
+                sphere.material.dispose();
+            });
+            distanceSpheres = {};
+        }
+
+        function updateCandidatePositions(candidates) {
+            const roomDepth = anchorConfig ? anchorConfig.room.depth : 3;
+
+            // Remove old candidate markers
+            candidateMarkers.forEach(marker => {
+                scene.remove(marker);
+                marker.geometry.dispose();
+                marker.material.dispose();
+            });
+            candidateMarkers = [];
+
+            if (!candidates || candidates.length === 0) return;
+
+            // Create markers for each candidate position
+            candidates.forEach((candidate, index) => {
+                const geometry = new THREE.SphereGeometry(0.12, 32, 32);
+                const material = new THREE.MeshStandardMaterial({
+                    color: 0xff6b35,
+                    emissive: 0xff6b35,
+                    emissiveIntensity: 0.2,
+                    transparent: true,
+                    opacity: 0.6,
+                    metalness: 0.5,
+                    roughness: 0.5
+                });
+                const marker = new THREE.Mesh(geometry, material);
+
+                // Map real coords to Three.js
+                const x = candidate[0];
+                const y = candidate[2];
+                const z = roomDepth - candidate[1];
+                marker.position.set(x, y, z);
+
+                scene.add(marker);
+                candidateMarkers.push(marker);
+            });
+        }
+
+        function clearCandidatePositions() {
+            candidateMarkers.forEach(marker => {
+                scene.remove(marker);
+                marker.geometry.dispose();
+                marker.material.dispose();
+            });
+            candidateMarkers = [];
+        }
+
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
@@ -1062,6 +1188,23 @@
             });
         }
 
+        // ===== Sphere Controls =====
+        function setupSphereControls() {
+            const toggleButton = document.getElementById('sphereToggle');
+
+            // Toggle spheres on/off
+            toggleButton.addEventListener('click', () => {
+                spheresEnabled = !spheresEnabled;
+                toggleButton.textContent = spheresEnabled ? 'Hide Spheres' : 'Show Spheres';
+                toggleButton.style.background = spheresEnabled ? '#4CAF50' : '#667eea';
+
+                // If disabling, clear the spheres
+                if (!spheresEnabled) {
+                    clearDistanceSpheres();
+                }
+            });
+        }
+
         // ===== Initialize Everything =====
         init3DScene();
 
@@ -1073,6 +1216,9 @@
 
         // Setup trail controls
         setupTrailControls();
+
+        // Setup sphere controls
+        setupSphereControls();
 
         // Poll for data every 100ms
         setInterval(fetchData, 100);
