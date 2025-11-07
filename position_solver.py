@@ -233,9 +233,10 @@ class PositionSolver:
             # Return as a successful position (but mark it specially)
             return position, True, None, num_anchors, "Two anchor mode: least-squares estimate"
 
-        # Check minimum anchors for full positioning
-        if num_anchors < self.min_anchors:
-            reason = f"Insufficient anchors: {num_anchors}/{self.min_anchors} (valid from {len(measurements)} total)"
+        # For 3+ anchors, we can use least-squares optimization
+        # (3 is the mathematical minimum for 3D trilateration, 4+ gives better accuracy)
+        if num_anchors < 3:
+            reason = f"Insufficient anchors: need at least 3 for 3D positioning, got {num_anchors}"
             return None, False, None, num_anchors, reason
 
         anchor_positions = np.array(anchor_positions)
