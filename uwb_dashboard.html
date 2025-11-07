@@ -622,32 +622,16 @@
                 updateDistanceSpheres(position.measurements);
             }
 
-            // Handle candidate positions for 2-anchor mode
-            if (position.candidate_positions) {
-                updateCandidatePositions(position.candidate_positions);
-                // Hide the main tag in candidate mode
-                if (tagMesh) {
-                    tagMesh.visible = false;
-                }
-            } else {
-                clearCandidatePositions();
-                if (tagMesh) {
-                    tagMesh.visible = true;
-                }
-            }
-
             if (position.success && position.position !== null) {
                 const pos = position.position;
                 document.getElementById('posX').textContent = pos[0].toFixed(2);
                 document.getElementById('posY').textContent = pos[1].toFixed(2);
                 document.getElementById('posZ').textContent = pos[2].toFixed(2);
 
-                // DO NOT hide failure message on success - let the 5s timer run out
-                // This ensures failures are visible even if successes occur right after
-
                 // Update 3D visualization
                 // Map real coords to Three.js: X=X, Y=Z(up), Z=depth-Y(north inverted)
                 if (tagMesh && anchorConfig) {
+                    tagMesh.visible = true;
                     const roomDepth = anchorConfig.room.depth || 3;
                     const x = pos[0];
                     const y = pos[2];
@@ -658,10 +642,32 @@
                     // Add point to trail
                     addTrailPoint(x, y, z);
                 }
+
+                // Show info message for 2-anchor mode (non-error)
+                if (position.num_anchors === 2 && position.failure_reason) {
+                    if (failureMessageTimer) {
+                        clearTimeout(failureMessageTimer);
+                    }
+                    failureReasonElement.textContent = 'ℹ️ ' + position.failure_reason;
+                    failureReasonElement.style.display = 'block';
+                    failureReasonElement.style.background = '#d1ecf1';
+                    failureReasonElement.style.borderColor = '#bee5eb';
+                    failureReasonElement.style.color = '#0c5460';
+
+                    failureMessageTimer = setTimeout(() => {
+                        failureReasonElement.style.display = 'none';
+                        failureMessageTimer = null;
+                    }, 5000);
+                }
             } else {
                 document.getElementById('posX').textContent = '--';
                 document.getElementById('posY').textContent = '--';
                 document.getElementById('posZ').textContent = '--';
+
+                // Hide tag when no position
+                if (tagMesh) {
+                    tagMesh.visible = false;
+                }
 
                 // Clear any existing timer (new message replaces old one and resets 5s timer)
                 if (failureMessageTimer) {
@@ -672,6 +678,9 @@
                 if (position.failure_reason) {
                     failureReasonElement.textContent = '⚠️ ' + position.failure_reason;
                     failureReasonElement.style.display = 'block';
+                    failureReasonElement.style.background = '#fff3cd';
+                    failureReasonElement.style.borderColor = '#ffc107';
+                    failureReasonElement.style.color = '#856404';
                 } else {
                     failureReasonElement.textContent = '⚠️ Position solver failed (no reason provided)';
                     failureReasonElement.style.display = 'block';
@@ -715,7 +724,6 @@
         // Distance sphere visualization
         let distanceSpheres = {}; // Map of anchor_id to sphere mesh
         let spheresEnabled = false;
-        let candidateMarkers = []; // Array of candidate position markers for 2-anchor mode
 
         function init3DScene() {
             const container = document.getElementById('viewer3d');
@@ -1015,53 +1023,6 @@
                 sphere.material.dispose();
             });
             distanceSpheres = {};
-        }
-
-        function updateCandidatePositions(candidates) {
-            const roomDepth = anchorConfig ? anchorConfig.room.depth : 3;
-
-            // Remove old candidate markers
-            candidateMarkers.forEach(marker => {
-                scene.remove(marker);
-                marker.geometry.dispose();
-                marker.material.dispose();
-            });
-            candidateMarkers = [];
-
-            if (!candidates || candidates.length === 0) return;
-
-            // Create markers for each candidate position
-            candidates.forEach((candidate, index) => {
-                const geometry = new THREE.SphereGeometry(0.12, 32, 32);
-                const material = new THREE.MeshStandardMaterial({
-                    color: 0xff6b35,
-                    emissive: 0xff6b35,
-                    emissiveIntensity: 0.2,
-                    transparent: true,
-                    opacity: 0.6,
-                    metalness: 0.5,
-                    roughness: 0.5
-                });
-                const marker = new THREE.Mesh(geometry, material);
-
-                // Map real coords to Three.js
-                const x = candidate[0];
-                const y = candidate[2];
-                const z = roomDepth - candidate[1];
-                marker.position.set(x, y, z);
-
-                scene.add(marker);
-                candidateMarkers.push(marker);
-            });
-        }
-
-        function clearCandidatePositions() {
-            candidateMarkers.forEach(marker => {
-                scene.remove(marker);
-                marker.geometry.dispose();
-                marker.material.dispose();
-            });
-            candidateMarkers = [];
         }
 
         function animate() {

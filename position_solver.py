@@ -158,13 +158,15 @@ class PositionSolver:
             residuals.append(calculated_dist - measured_dist)
         return np.array(residuals)
 
-    def calculate_two_anchor_positions(self, anchor1_pos, dist1, anchor2_pos, dist2):
+    def calculate_two_anchor_position(self, anchor1_pos, dist1, anchor2_pos, dist2):
         """
-        Calculate the two candidate positions from two anchor measurements.
-        The intersection of two spheres is a circle. We find two points on this circle
-        at a reasonable z-height (average of anchor heights or 1.0m).
+        Calculate the best position estimate from two anchor measurements.
 
-        Returns: array of two 3D positions, or None if no intersection
+        With perfect measurements, two spheres touch at exactly one point.
+        With imperfect measurements, we find the point on the line between anchors
+        that minimizes the squared distance error.
+
+        Returns: 3D position (best estimate)
         """
         anchor1_pos = np.array(anchor1_pos)
         anchor2_pos = np.array(anchor2_pos)
@@ -173,43 +175,27 @@ class PositionSolver:
         d_vec = anchor2_pos - anchor1_pos
         d = np.linalg.norm(d_vec)
 
-        # Check if spheres intersect
-        if d > dist1 + dist2 or d < abs(dist1 - dist2) or d == 0:
-            return None
+        if d == 0:
+            # Anchors are at the same position, use first anchor + distance
+            return anchor1_pos + np.array([dist1, 0, 0])
 
         # Unit vector from anchor1 to anchor2
         u = d_vec / d
 
-        # Distance from anchor1 to the plane where the circles intersect
-        # Using the formula: a = (r1² - r2² + d²) / (2d)
-        a = (dist1**2 - dist2**2 + d**2) / (2 * d)
+        # Find the point on the line that minimizes squared error:
+        # We parameterize P = anchor1 + t * (anchor2 - anchor1)
+        # Minimize: (t*d - dist1)² + ((1-t)*d - dist2)²
+        # Solution: t = (d + dist1 - dist2) / (2*d)
+        t = (d + dist1 - dist2) / (2 * d)
 
-        # Check if the intersection point is valid
-        h_squared = dist1**2 - a**2
-        if h_squared < 0:
-            return None
+        # Clamp t to [0, 1] to keep position between (or near) the anchors
+        # Note: We allow slight extrapolation for measurement errors
+        t = max(-0.1, min(1.1, t))
 
-        h = np.sqrt(h_squared)
+        # Calculate the position
+        position = anchor1_pos + t * d_vec
 
-        # Point on the line between anchors where the circle lies
-        p_center = anchor1_pos + a * u
-
-        # We need a vector perpendicular to u to define the circle plane
-        # Choose a vector perpendicular to u
-        if abs(u[2]) < 0.9:  # u is not too vertical
-            # Use z-axis cross product
-            perp = np.cross(u, np.array([0, 0, 1]))
-        else:
-            # Use x-axis cross product
-            perp = np.cross(u, np.array([1, 0, 0]))
-
-        perp = perp / np.linalg.norm(perp)
-
-        # Two candidate positions on the circle
-        candidate1 = p_center + h * perp
-        candidate2 = p_center - h * perp
-
-        return np.array([candidate1, candidate2])
+        return position
 
     def calculate_position_lsq(self, measurements):
         """
@@ -238,17 +224,14 @@ class PositionSolver:
             # The actual position is indeterminate, but we return data for sphere rendering
             return None, False, None, num_anchors, f"Single anchor mode: anchor {anchor_ids[0]} at distance {distances[0]:.2f}m"
 
-        # Handle 2 anchor case - calculate two candidate positions
+        # Handle 2 anchor case - calculate best position estimate
         if num_anchors == 2:
-            candidates = self.calculate_two_anchor_positions(
+            position = self.calculate_two_anchor_position(
                 anchor_positions[0], distances[0],
                 anchor_positions[1], distances[1]
             )
-            if candidates is not None:
-                # Return both candidates - the visualization will handle this
-                return None, False, None, num_anchors, f"Two anchor mode: {len(candidates)} candidate positions"
-            else:
-                return None, False, None, num_anchors, "Two anchors: spheres do not intersect (check distances)"
+            # Return as a successful position (but mark it specially)
+            return position, True, None, num_anchors, "Two anchor mode: least-squares estimate"
 
         # Check minimum anchors for full positioning
         if num_anchors < self.min_anchors:
@@ -386,8 +369,7 @@ class PositionSolver:
             'residual': None,
             'filtered': False,
             'failure_reason': None,
-            'measurements': valid_measurements,  # For sphere visualization
-            'candidate_positions': None  # For 2-anchor mode
+            'measurements': valid_measurements  # For sphere visualization
         }
 
         # Handle 1 anchor case
@@ -395,20 +377,7 @@ class PositionSolver:
             result['failure_reason'] = f"Single anchor mode: anchor {anchor_ids_list[0]} at distance {distances_list[0]:.2f}m"
             return result
 
-        # Handle 2 anchor case
-        if num_anchors == 2:
-            candidates = self.calculate_two_anchor_positions(
-                anchor_positions_list[0], distances_list[0],
-                anchor_positions_list[1], distances_list[1]
-            )
-            if candidates is not None:
-                result['candidate_positions'] = [c.tolist() for c in candidates]
-                result['failure_reason'] = f"Two anchor mode: {len(candidates)} candidate positions"
-            else:
-                result['failure_reason'] = "Two anchors: spheres do not intersect (check distances)"
-            return result
-
-        # For 3+ anchors, use the standard positioning
+        # For 2+ anchors, use positioning (2-anchor mode uses simplified solver)
         position, success, residual, _, failure_reason = self.calculate_position_lsq(measurements)
 
         result['success'] = success
