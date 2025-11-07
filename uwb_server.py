@@ -20,13 +20,14 @@ latest_data = {
     'device_port': '',
     'format': 'Waiting for data...',
     'position': {
-        'x': None,
-        'y': None,
-        'z': None,
+        'position': None,
         'success': False,
         'num_anchors': 0,
         'residual': None,
-        'velocity': {'x': 0, 'y': 0, 'z': 0}
+        'velocity': None,
+        'failure_reason': None,
+        'measurements': None,
+        'candidate_positions': None
     },
     'imu': {
         'acc_x': 0,
@@ -378,32 +379,27 @@ def read_uwb_data(port='/dev/ttyACM0'):
 
                             # Calculate 3D position if solver is available
                             position_data = {
-                                'x': None,
-                                'y': None,
-                                'z': None,
+                                'position': None,
                                 'success': False,
                                 'num_anchors': 0,
                                 'residual': None,
-                                'velocity': {'x': 0, 'y': 0, 'z': 0},
-                                'failure_reason': None
+                                'velocity': None,
+                                'failure_reason': None,
+                                'measurements': None,
+                                'candidate_positions': None
                             }
 
                             if position_solver:
                                 result = position_solver.solve(anchors)
+                                # Pass through all fields from solver
                                 position_data['success'] = result['success']
                                 position_data['num_anchors'] = result['num_anchors']
                                 position_data['residual'] = result['residual']
                                 position_data['failure_reason'] = result.get('failure_reason')
-
-                                if result['success'] and result['position']:
-                                    position_data['x'] = result['position'][0]
-                                    position_data['y'] = result['position'][1]
-                                    position_data['z'] = result['position'][2]
-
-                                    if result['velocity']:
-                                        position_data['velocity']['x'] = result['velocity'][0]
-                                        position_data['velocity']['y'] = result['velocity'][1]
-                                        position_data['velocity']['z'] = result['velocity'][2]
+                                position_data['position'] = result.get('position')
+                                position_data['velocity'] = result.get('velocity')
+                                position_data['measurements'] = result.get('measurements')
+                                position_data['candidate_positions'] = result.get('candidate_positions')
 
                             latest_data.update({
                                 'timestamp': time.time(),
