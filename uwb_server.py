@@ -26,7 +26,8 @@ latest_data = {
         'residual': None,
         'velocity': None,
         'failure_reason': None,
-        'measurements': None
+        'measurements': None,
+        'candidate_positions': None
     },
     'imu': {
         'acc_x': 0,
@@ -384,7 +385,8 @@ def read_uwb_data(port='/dev/ttyACM0'):
                                 'residual': None,
                                 'velocity': None,
                                 'failure_reason': None,
-                                'measurements': None
+                                'measurements': None,
+                                'candidate_positions': None
                             }
 
                             if position_solver:
@@ -397,6 +399,7 @@ def read_uwb_data(port='/dev/ttyACM0'):
                                 position_data['position'] = result.get('position')
                                 position_data['velocity'] = result.get('velocity')
                                 position_data['measurements'] = result.get('measurements')
+                                position_data['candidate_positions'] = result.get('candidate_positions')
 
                             latest_data.update({
                                 'timestamp': time.time(),

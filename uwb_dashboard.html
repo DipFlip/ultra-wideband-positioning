@@ -622,6 +622,40 @@
                 updateDistanceSpheres(position.measurements);
             }
 
+            // Handle candidate positions for 2-anchor mode
+            if (position.candidate_positions && position.candidate_positions.length > 0) {
+                updateCandidatePositions(position.candidate_positions);
+
+                // Hide the main tag in candidate mode
+                if (tagMesh) {
+                    tagMesh.visible = false;
+                }
+
+                // Show info about candidates
+                document.getElementById('posX').textContent = '--';
+                document.getElementById('posY').textContent = '--';
+                document.getElementById('posZ').textContent = '--';
+
+                if (failureMessageTimer) {
+                    clearTimeout(failureMessageTimer);
+                }
+                failureReasonElement.textContent = 'ℹ️ ' + position.failure_reason;
+                failureReasonElement.style.display = 'block';
+                failureReasonElement.style.background = '#d1ecf1';
+                failureReasonElement.style.borderColor = '#bee5eb';
+                failureReasonElement.style.color = '#0c5460';
+
+                failureMessageTimer = setTimeout(() => {
+                    failureReasonElement.style.display = 'none';
+                    failureMessageTimer = null;
+                }, 5000);
+
+                return; // Don't process normal position logic
+            } else {
+                // Clear candidates if we're not in 2-anchor mode
+                clearCandidatePositions();
+            }
+
             if (position.success && position.position !== null) {
                 const pos = position.position;
                 document.getElementById('posX').textContent = pos[0].toFixed(2);
@@ -641,23 +675,6 @@
 
                     // Add point to trail
                     addTrailPoint(x, y, z);
-                }
-
-                // Show info message for 2-anchor mode (non-error)
-                if (position.num_anchors === 2 && position.failure_reason) {
-                    if (failureMessageTimer) {
-                        clearTimeout(failureMessageTimer);
-                    }
-                    failureReasonElement.textContent = 'ℹ️ ' + position.failure_reason;
-                    failureReasonElement.style.display = 'block';
-                    failureReasonElement.style.background = '#d1ecf1';
-                    failureReasonElement.style.borderColor = '#bee5eb';
-                    failureReasonElement.style.color = '#0c5460';
-
-                    failureMessageTimer = setTimeout(() => {
-                        failureReasonElement.style.display = 'none';
-                        failureMessageTimer = null;
-                    }, 5000);
                 }
             } else {
                 document.getElementById('posX').textContent = '--';
@@ -724,6 +741,7 @@
         // Distance sphere visualization
         let distanceSpheres = {}; // Map of anchor_id to sphere mesh
         let spheresEnabled = false;
+        let candidateMarkers = []; // Array of candidate position markers for 2-anchor mode
 
         function init3DScene() {
             const container = document.getElementById('viewer3d');
@@ -1023,6 +1041,53 @@
                 sphere.material.dispose();
             });
             distanceSpheres = {};
+        }
+
+        function updateCandidatePositions(candidates) {
+            const roomDepth = anchorConfig ? anchorConfig.room.depth : 3;
+
+            // Remove old candidate markers
+            candidateMarkers.forEach(marker => {
+                scene.remove(marker);
+                marker.geometry.dispose();
+                marker.material.dispose();
+            });
+            candidateMarkers = [];
+
+            if (!candidates || candidates.length === 0) return;
+
+            // Create markers for each candidate position
+            candidates.forEach((candidate, index) => {
+                const geometry = new THREE.SphereGeometry(0.10, 16, 16);
+                const material = new THREE.MeshStandardMaterial({
+                    color: 0xff6b35,
+                    emissive: 0xff6b35,
+                    emissiveIntensity: 0.3,
+                    transparent: true,
+                    opacity: 0.7,
+                    metalness: 0.5,
+                    roughness: 0.5
+                });
+                const marker = new THREE.Mesh(geometry, material);
+
+                // Map real coords to Three.js
+                const x = candidate[0];
+                const y = candidate[2];
+                const z = roomDepth - candidate[1];
+                marker.position.set(x, y, z);
+
+                scene.add(marker);
+                candidateMarkers.push(marker);
+            });
+        }
+
+        function clearCandidatePositions() {
+            candidateMarkers.forEach(marker => {
+                scene.remove(marker);
+                marker.geometry.dispose();
+                marker.material.dispose();
+            });
+            candidateMarkers = [];
         }
 
         function animate() {
