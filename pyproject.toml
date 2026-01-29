@@ -1,0 +1,12 @@
+[project]
+name = "ultra-wideband-positioning"
+version = "0.1.0"
+description = "Python utility for configuring and working with BU03/BU04 UWB positioning modules"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "pyserial",
+    "numpy",
+    "scipy",
+]
+

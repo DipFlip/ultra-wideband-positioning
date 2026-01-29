@@ -11,10 +11,12 @@ Start the web UI:
 
 ```bash
 # Auto-detect device port (tries /dev/ttyACM0, /dev/ttyACM1)
-python3 uwb_server.py
+uv run uwb_server.py
+# or
+python3 uwb_server.py  # requires: pip install pyserial numpy scipy
 
-# Or specify port and HTTP port manually
-python3 uwb_server.py /dev/ttyACM0 8080
+# Specify port and HTTP port manually
+uv run uwb_server.py /dev/ttyACM0 8080
 ```
 
 Then open your browser to `http://localhost:8080`
@@ -37,12 +39,12 @@ Then open your browser to `http://localhost:8080`
 
 ```bash
 # Interactive mode
-python3 bu03_util.py
+uv run bu03_util.py
 
 # Show version
-python3 bu03_util.py info
+uv run bu03_util.py info
 # and configure the board
-python3 bu03_util.py set <id> <role> <ch> <rate>
+uv run bu03_util.py set <id> <role> <ch> <rate>
 ```
 
 ## Device Configuration
@@ -79,21 +81,21 @@ The BU03 UWB module operates on two configurable channels:
 **Configuration commands:**
 ```bash
 # Tag (ID:0)
-python3 bu03_util.py set 0 0 1 1
+uv run bu03_util.py set 0 0 1 1
 
 # Base Station 1 (ID:0, same as tag)
-python3 bu03_util.py set 0 1 1 1
+uv run bu03_util.py set 0 1 1 1
 
 # Base Station 2 (ID:1)
-python3 bu03_util.py set 1 1 1 1
+uv run bu03_util.py set 1 1 1 1
 
 # Base Station 3 (ID:2)
-python3 bu03_util.py set 2 1 1 1
+uv run bu03_util.py set 2 1 1 1
 ```
 
 ## Interactive Commands
 
-When running `python3 bu03_util.py` in interactive mode:
+When running `uv run bu03_util.py` in interactive mode:
 
 ```
 cfg                 # Show current configuration
